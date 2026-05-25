@@ -355,4 +355,300 @@ if page == "Dashboard":
         st.subheader("Trading Volume")
         vol = filtered_df[['Date', 'Volume_Gold']].dropna()
         if not vol.empty:
-            fig5 =
+            fig5 = go.Figure(go.Bar(
+                x=vol['Date'], y=vol['Volume_Gold'],
+                marker_color='rgba(255,199,44,0.7)'
+            ))
+            fig5.update_layout(height=300, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+                               yaxis_title="Volume", xaxis_title="")
+            st.plotly_chart(fig5, width='stretch')
+        else:
+            st.info("No volume data in selected range.")
+
+    # Daily Change Distribution
+    st.subheader("Daily Change % Distribution")
+    chg = filtered_df['Change%_Gold'].dropna() * 100
+    if not chg.empty:
+        fig6 = px.histogram(chg, nbins=80, color_discrete_sequence=['#ffc72c'],
+                            labels={'value': 'Daily Change (%)', 'count': 'Days'})
+        fig6.update_layout(height=250, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+                           xaxis_title="Daily Change (%)", showlegend=False)
+        st.plotly_chart(fig6, width='stretch')
+
+    # Raw Data
+    with st.expander("View Raw Data"):
+        st.dataframe(
+            filtered_df[['Date', 'Price_Gold', 'High_Gold', 'Low_Gold',
+                         'Price_Oil', 'Price_Dollar', 'Price_Stocks']]
+            .dropna().set_index('Date'),
+            width='stretch'
+        )
+
+
+# ==============================================================================
+# PREDICTION
+# ==============================================================================
+elif page == "Prediction":
+
+    st.markdown("<h1>Gold Price Prediction</h1>", unsafe_allow_html=True)
+    st.markdown("Train a machine learning model to predict gold prices from historical patterns.")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        model_name = st.selectbox("Model", ["Random Forest", "Linear Regression", "XGBoost", "LSTM (Deep Learning)"])
+    with c2:
+        test_pct = st.slider("Test Size %", 10, 40, 20)
+    with c3:
+        n_lags = st.slider("Lag Features (days)", 1, 30, 5)
+
+    extra_feats = st.multiselect(
+        "Additional Features",
+        ['Price_Oil', 'Price_Dollar', 'Price_Stocks'],
+        default=['Price_Oil', 'Price_Dollar']
+    )
+
+    run = st.button("Train Model", type="primary", width='stretch')
+
+    if run:
+        with st.spinner("Training ... please wait"):
+
+            cols = ['Date', 'Price_Gold'] + extra_feats
+            ml = filtered_df[cols].dropna().sort_values('Date').reset_index(drop=True)
+
+            if model_name == "LSTM (Deep Learning)":
+                try:
+                    import tensorflow as tf
+                    from tensorflow.keras.models import Sequential
+                    from tensorflow.keras.layers import LSTM, Dense, Dropout
+
+                    scaler = MinMaxScaler()
+                    scaled = scaler.fit_transform(ml[['Price_Gold']])
+
+                    SEQ_LEN = max(n_lags, 10)
+                    X_seq, y_seq = [], []
+                    for i in range(SEQ_LEN, len(scaled)):
+                        X_seq.append(scaled[i - SEQ_LEN:i, 0])
+                        y_seq.append(scaled[i, 0])
+                    X_seq, y_seq = np.array(X_seq), np.array(y_seq)
+                    X_seq = X_seq.reshape(X_seq.shape[0], X_seq.shape[1], 1)
+
+                    split = int(len(X_seq) * (1 - test_pct / 100))
+                    X_tr, X_te = X_seq[:split], X_seq[split:]
+                    y_tr, y_te = y_seq[:split], y_seq[split:]
+
+                    model = Sequential([
+                        LSTM(64, return_sequences=True, input_shape=(SEQ_LEN, 1)),
+                        Dropout(0.2),
+                        LSTM(32),
+                        Dropout(0.2),
+                        Dense(1)
+                    ])
+                    model.compile(optimizer='adam', loss='mse')
+                    model.fit(X_tr, y_tr, epochs=20, batch_size=32, verbose=0)
+
+                    preds_scaled = model.predict(X_te, verbose=0)
+                    preds = scaler.inverse_transform(preds_scaled).flatten()
+                    actual = scaler.inverse_transform(y_te.reshape(-1, 1)).flatten()
+                    test_dates = ml['Date'].iloc[split + SEQ_LEN:].reset_index(drop=True)
+
+                    rmse = np.sqrt(mean_squared_error(actual, preds))
+                    mae = mean_absolute_error(actual, preds)
+                    r2 = r2_score(actual, preds)
+
+                    st.success("LSTM model trained successfully!")
+                    mc1, mc2, mc3 = st.columns(3)
+                    mc1.metric("RMSE", f"${rmse:,.2f}")
+                    mc2.metric("MAE", f"${mae:,.2f}")
+                    mc3.metric("R2 Score", f"{r2:.4f}")
+
+                    fig_pred = go.Figure()
+                    fig_pred.add_trace(go.Scatter(x=test_dates, y=actual, name='Actual',
+                                                   line=dict(color='#e0f7fa', width=2)))
+                    fig_pred.add_trace(go.Scatter(x=test_dates, y=preds, name='Predicted (LSTM)',
+                                                   line=dict(color='#ffc72c', width=2, dash='dash')))
+                    fig_pred.update_layout(
+                        height=420, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+                        title="LSTM: Actual vs Predicted", hovermode='x unified',
+                        legend=dict(orientation='h', y=1.02),
+                        margin=dict(l=0, r=0, t=40, b=0)
+                    )
+                    st.plotly_chart(fig_pred, width='stretch')
+
+                except ImportError:
+                    st.error(
+                        "TensorFlow is not available in this environment. "
+                        "LSTM requires TensorFlow which is not supported on Streamlit Cloud. "
+                        "Please select Random Forest, Linear Regression, or XGBoost instead."
+                    )
+
+            else:
+                for lag in range(1, n_lags + 1):
+                    ml[f'lag_{lag}'] = ml['Price_Gold'].shift(lag)
+
+                ml = ml.dropna().reset_index(drop=True)
+
+                feature_cols = [f'lag_{i}' for i in range(1, n_lags + 1)] + extra_feats
+                feature_cols = [c for c in feature_cols if c in ml.columns]
+
+                X = ml[feature_cols].values
+                y = ml['Price_Gold'].values
+                dates = ml['Date'].values
+
+                split = int(len(X) * (1 - test_pct / 100))
+                X_tr, X_te = X[:split], X[split:]
+                y_tr, y_te = y[:split], y[split:]
+                dates_te = dates[split:]
+
+                if model_name == "Random Forest":
+                    mdl = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
+                elif model_name == "Linear Regression":
+                    mdl = LinearRegression()
+                else:
+                    try:
+                        from xgboost import XGBRegressor
+                        mdl = XGBRegressor(n_estimators=300, learning_rate=0.05,
+                                           max_depth=6, random_state=42, verbosity=0)
+                    except ImportError:
+                        st.error("XGBoost is not installed. Please choose another model.")
+                        st.stop()
+
+                mdl.fit(X_tr, y_tr)
+                preds = mdl.predict(X_te)
+
+                rmse = np.sqrt(mean_squared_error(y_te, preds))
+                mae = mean_absolute_error(y_te, preds)
+                r2 = r2_score(y_te, preds)
+
+                st.success(f"{model_name} trained successfully!")
+                mc1, mc2, mc3 = st.columns(3)
+                mc1.metric("RMSE", f"${rmse:,.2f}")
+                mc2.metric("MAE", f"${mae:,.2f}")
+                mc3.metric("R2 Score", f"{r2:.4f}")
+
+                fig_pred = go.Figure()
+                fig_pred.add_trace(go.Scatter(
+                    x=dates_te, y=y_te, name='Actual',
+                    line=dict(color='#e0f7fa', width=2)
+                ))
+                fig_pred.add_trace(go.Scatter(
+                    x=dates_te, y=preds, name=f'Predicted ({model_name})',
+                    line=dict(color='#ffc72c', width=2, dash='dash')
+                ))
+                fig_pred.update_layout(
+                    height=420, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+                    title=f"{model_name}: Actual vs Predicted",
+                    hovermode='x unified',
+                    legend=dict(orientation='h', y=1.02),
+                    margin=dict(l=0, r=0, t=40, b=0)
+                )
+                st.plotly_chart(fig_pred, width='stretch')
+
+                if model_name in ["Random Forest", "XGBoost"]:
+                    st.subheader("Feature Importance")
+                    fi = pd.Series(mdl.feature_importances_, index=feature_cols).sort_values(ascending=True)
+                    fig_fi = go.Figure(go.Bar(
+                        x=fi.values, y=fi.index, orientation='h',
+                        marker_color='#ffc72c'
+                    ))
+                    fig_fi.update_layout(
+                        height=max(250, len(feature_cols) * 30),
+                        template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+                        xaxis_title="Importance", margin=dict(l=0, r=0, t=10, b=0)
+                    )
+                    st.plotly_chart(fig_fi, width='stretch')
+
+                with st.expander("Residual Analysis"):
+                    residuals = y_te - preds
+                    fig_res = px.histogram(residuals, nbins=60, color_discrete_sequence=['#2e5f65'],
+                                          labels={'value': 'Residual (USD)'})
+                    fig_res.update_layout(
+                        height=250, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+                        xaxis_title="Residual (USD)", showlegend=False
+                    )
+                    st.plotly_chart(fig_res, width='stretch')
+
+
+# ==============================================================================
+# ABOUT
+# ==============================================================================
+elif page == "About":
+
+    st.markdown("<h1>About This App</h1>", unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background:#1c1f23; border:1px solid #2e5f65; border-radius:12px; padding:24px 28px; margin-bottom:20px;">
+        <h3 style="color:#ffc72c; margin-top:0;">Gold Price Prediction App</h3>
+        <p style="color:#e0f7fa; line-height:1.8;">
+            This application provides an interactive dashboard and machine learning-based prediction
+            tool for gold price analysis. It uses historical data from Yahoo Finance covering
+            gold futures, crude oil, the US Dollar Index, and the S&P 500.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("""
+        <div style="background:#1c1f23; border:1px solid #2e5f65; border-radius:12px; padding:20px; margin-bottom:16px;">
+            <h3 style="color:#ffc72c; margin-top:0;">Data</h3>
+            <ul style="color:#e0f7fa; line-height:2; margin:0; padding-left:20px;">
+                <li>Source: Yahoo Finance (yfinance)</li>
+                <li>Gold Futures (GC=F)</li>
+                <li>Crude Oil Futures (CL=F)</li>
+                <li>US Dollar Index (DX-Y.NYB)</li>
+                <li>S&P 500 Index (^GSPC)</li>
+                <li>Updated daily via GitHub Actions</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div style="background:#1c1f23; border:1px solid #2e5f65; border-radius:12px; padding:20px;">
+            <h3 style="color:#ffc72c; margin-top:0;">Dashboard Features</h3>
+            <ul style="color:#e0f7fa; line-height:2; margin:0; padding-left:20px;">
+                <li>Candlestick and Line charts</li>
+                <li>Key performance metrics</li>
+                <li>Asset comparison (normalized)</li>
+                <li>Correlation heatmap</li>
+                <li>Yearly average bar chart</li>
+                <li>Volume analysis</li>
+                <li>Daily return distribution</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.markdown("""
+        <div style="background:#1c1f23; border:1px solid #2e5f65; border-radius:12px; padding:20px; margin-bottom:16px;">
+            <h3 style="color:#ffc72c; margin-top:0;">ML Models</h3>
+            <ul style="color:#e0f7fa; line-height:2; margin:0; padding-left:20px;">
+                <li><b style="color:#ffc72c;">Random Forest</b> - ensemble of decision trees</li>
+                <li><b style="color:#ffc72c;">Linear Regression</b> - baseline linear model</li>
+                <li><b style="color:#ffc72c;">XGBoost</b> - gradient boosting</li>
+                <li><b style="color:#ffc72c;">LSTM</b> - deep learning (local only)</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div style="background:#1c1f23; border:1px solid #2e5f65; border-radius:12px; padding:20px;">
+            <h3 style="color:#ffc72c; margin-top:0;">Tech Stack</h3>
+            <ul style="color:#e0f7fa; line-height:2; margin:0; padding-left:20px;">
+                <li>Python 3.11</li>
+                <li>Streamlit</li>
+                <li>Plotly</li>
+                <li>scikit-learn / XGBoost</li>
+                <li>pandas / numpy</li>
+                <li>GitHub Actions (CI/CD)</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background:#1c1f23; border:1px solid #2e5f65; border-radius:12px; padding:20px; margin-top:4px;">
+        <p style="color:#e0f7fa; margin:0; font-size:0.85rem; opacity:0.7; text-align:center;">
+            Built with Streamlit - Data from Yahoo Finance - Auto-updated daily
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
