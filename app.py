@@ -358,7 +358,7 @@ elif page == "🔮  Prediction":
     # ── Config ──────────────────────────────────────────────────────────────────
     c1, c2, c3 = st.columns(3)
     with c1:
-        model_name = st.selectbox("🤖 Model", ["Random Forest", "Linear Regression", "XGBoost"])
+        model_name = st.selectbox("🤖 Model", ["Random Forest", "Linear Regression", "XGBoost", "LSTM (Deep Learning)"])
     with c2:
         test_pct = st.slider("🧪 Test Size %", 10, 40, 20)
     with c3:
@@ -379,6 +379,129 @@ elif page == "🔮  Prediction":
             cols = ['Date', 'Price_Gold'] + extra_feats
             ml = filtered_df[cols].dropna().sort_values('Date').reset_index(drop=True)
 
+            # ── LSTM path (separate flow) ────────────────────────────────────────
+            if model_name == "LSTM (Deep Learning)":
+                try:
+                    import tensorflow as tf
+                    from tensorflow.keras.models import Sequential
+                    from tensorflow.keras.layers import LSTM, Dense, Dropout
+                    from tensorflow.keras.callbacks import EarlyStopping
+
+                    tf.random.set_seed(42)
+
+                    # Scale
+                    feature_cols_lstm = ['Price_Gold'] + extra_feats
+                    scaler_lstm = MinMaxScaler()
+                    scaled = scaler_lstm.fit_transform(ml[feature_cols_lstm])
+
+                    # Build sequences
+                    SEQ_LEN = n_lags
+                    X_seq, y_seq = [], []
+                    for i in range(SEQ_LEN, len(scaled)):
+                        X_seq.append(scaled[i - SEQ_LEN:i])
+                        y_seq.append(scaled[i, 0])   # Price_Gold is index 0
+
+                    X_seq = np.array(X_seq)
+                    y_seq = np.array(y_seq)
+                    dates_seq = ml['Date'].iloc[SEQ_LEN:].reset_index(drop=True)
+
+                    split = int(len(X_seq) * (1 - test_pct / 100))
+                    X_tr_l, X_te_l = X_seq[:split], X_seq[split:]
+                    y_tr_l, y_te_l = y_seq[:split], y_seq[split:]
+                    d_te           = dates_seq.iloc[split:]
+                    y_te_orig      = ml['Price_Gold'].iloc[SEQ_LEN + split:].values
+
+                    # Build LSTM model
+                    lstm_model = Sequential([
+                        LSTM(64, return_sequences=True,
+                             input_shape=(SEQ_LEN, X_seq.shape[2])),
+                        Dropout(0.2),
+                        LSTM(32, return_sequences=False),
+                        Dropout(0.2),
+                        Dense(16, activation='relu'),
+                        Dense(1)
+                    ])
+                    lstm_model.compile(optimizer='adam', loss='mse')
+
+                    es = EarlyStopping(monitor='val_loss', patience=5,
+                                       restore_best_weights=True)
+                    with st.spinner("🧠 Training LSTM — this may take a minute…"):
+                        lstm_model.fit(
+                            X_tr_l, y_tr_l,
+                            epochs=50, batch_size=32,
+                            validation_split=0.1,
+                            callbacks=[es], verbose=0
+                        )
+
+                    # Predict & inverse-scale
+                    pred_scaled = lstm_model.predict(X_te_l, verbose=0).flatten()
+                    dummy = np.zeros((len(pred_scaled), len(feature_cols_lstm)))
+                    dummy[:, 0] = pred_scaled
+                    y_pred = scaler_lstm.inverse_transform(dummy)[:, 0]
+                    y_te   = pd.Series(y_te_orig)
+
+                    r2   = r2_score(y_te, y_pred)
+                    rmse = np.sqrt(mean_squared_error(y_te, y_pred))
+                    mae  = mean_absolute_error(y_te, y_pred)
+                    mape = np.mean(np.abs((y_te.values - y_pred) / y_te.values)) * 100
+
+                    st.markdown("### 📊 Model Performance")
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("R² Score", f"{r2:.4f}")
+                    m2.metric("RMSE",     f"${rmse:,.2f}")
+                    m3.metric("MAE",      f"${mae:,.2f}")
+                    m4.metric("MAPE",     f"{mape:.2f}%")
+                    st.markdown("---")
+
+                    # Chart
+                    st.subheader("📈 Actual vs Predicted (LSTM)")
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=ml['Date'], y=ml['Price_Gold'],
+                        mode='lines', name='Full History',
+                        line=dict(color='rgba(255,215,0,0.25)', width=1)
+                    ))
+                    fig.add_trace(go.Scatter(
+                        x=d_te, y=y_te,
+                        mode='lines', name='Actual (Test)',
+                        line=dict(color='#FFD700', width=2)
+                    ))
+                    fig.add_trace(go.Scatter(
+                        x=d_te, y=y_pred,
+                        mode='lines', name='LSTM Predicted',
+                        line=dict(color='#a78bfa', width=2, dash='dash')
+                    ))
+                    fig.add_vline(x=d_te.iloc[0], line_dash='dash',
+                                  line_color='gray',
+                                  annotation_text='Train | Test',
+                                  annotation_position='top left')
+                    fig.update_layout(
+                        height=480, template='plotly_dark',
+                        xaxis_title="Date", yaxis_title="Gold Price (USD)",
+                        hovermode='x unified',
+                        legend=dict(orientation='h', y=1.02)
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    # Residuals
+                    st.subheader("📉 Residuals")
+                    resid = y_te.values - y_pred
+                    colors_r = ['#FF4444' if r < 0 else '#4CAF50' for r in resid]
+                    fig_r = go.Figure(go.Bar(x=d_te, y=resid,
+                                            marker_color=colors_r))
+                    fig_r.add_hline(y=0, line_color='white', line_dash='dash')
+                    fig_r.update_layout(height=240, template='plotly_dark',
+                                        yaxis_title="Residual (USD)", xaxis_title="")
+                    st.plotly_chart(fig_r, use_container_width=True)
+
+                    st.info("💡 LSTM uses sequential windows — feature importance is not available for deep learning models.")
+
+                except ImportError:
+                    st.error("❌ TensorFlow غير مثبت. شغلي: `pip install tensorflow` ثم أعيدي التشغيل.")
+
+                st.stop()   # skip the ML flow below for LSTM
+
+            # ── ML path (non-LSTM) ───────────────────────────────────────────────
             for lag in range(1, n_lags + 1):
                 ml[f'Lag_{lag}'] = ml['Price_Gold'].shift(lag)
 
