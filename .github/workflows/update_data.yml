@@ -1,0 +1,45 @@
+name: 🥇 Auto-Update Gold Data
+
+on:
+  schedule:
+    # كل يوم الساعة 11 مساءً UTC (بعد إغلاق السوق الأمريكي)
+    # الأحد - الخميس فقط (أيام التداول)
+    - cron: '0 23 * * 0-4'
+
+  # تشغيل يدوي من GitHub لو احتجتي
+  workflow_dispatch:
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # عشان يقدر يعمل push
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install dependencies
+        run: pip install yfinance pandas
+
+      - name: 🔄 Run update script
+        run: python update_data.py
+
+      - name: 📤 Commit & push if new data added
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add TSDATA.csv
+          if git diff --staged --quiet; then
+            echo "✅ No new data today — nothing to commit."
+          else
+            git commit -m "📈 Auto-update gold data $(date +'%Y-%m-%d')"
+            git push
+            echo "🚀 New data pushed!"
+          fi
