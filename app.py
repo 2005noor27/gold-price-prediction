@@ -248,7 +248,7 @@ if page == "📊  Dashboard":
         hovermode='x unified',
         legend=dict(orientation='h', y=1.02, x=0)
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     # ── Comparison & Correlation ─────────────────────────────────────────────────
     left, right = st.columns(2)
@@ -275,7 +275,7 @@ if page == "📊  Dashboard":
                                yaxis_title="Normalized (0–100)",
                                hovermode='x unified',
                                legend=dict(orientation='h', y=1.02))
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
         else:
             st.info("Not enough data for comparison.")
 
@@ -291,7 +291,7 @@ if page == "📊  Dashboard":
                 zmin=-1, zmax=1
             )
             fig3.update_layout(height=340, template='plotly_dark')
-            st.plotly_chart(fig3, use_container_width=True)
+            st.plotly_chart(fig3, width='stretch')
         else:
             st.info("Not enough data for correlation.")
 
@@ -306,7 +306,7 @@ if page == "📊  Dashboard":
                       labels={'Price_Gold': 'Avg Price (USD)'})
         fig4.update_layout(height=300, template='plotly_dark',
                            showlegend=False, xaxis_title="")
-        st.plotly_chart(fig4, use_container_width=True)
+        st.plotly_chart(fig4, width='stretch')
 
     with r2:
         st.subheader("📦 Trading Volume")
@@ -318,7 +318,7 @@ if page == "📊  Dashboard":
             ))
             fig5.update_layout(height=300, template='plotly_dark',
                                yaxis_title="Volume", xaxis_title="")
-            st.plotly_chart(fig5, use_container_width=True)
+            st.plotly_chart(fig5, width='stretch')
         else:
             st.info("No volume data in selected range.")
 
@@ -330,7 +330,7 @@ if page == "📊  Dashboard":
                             labels={'value': 'Daily Change (%)', 'count': 'Days'})
         fig6.update_layout(height=250, template='plotly_dark',
                            xaxis_title="Daily Change (%)", showlegend=False)
-        st.plotly_chart(fig6, use_container_width=True)
+        st.plotly_chart(fig6, width='stretch')
 
     # ── Raw Data ────────────────────────────────────────────────────────────────
     with st.expander("📋 View Raw Data"):
@@ -338,7 +338,7 @@ if page == "📊  Dashboard":
             filtered_df[['Date','Price_Gold','High_Gold','Low_Gold',
                          'Price_Oil','Price_Dollar','Price_Stocks']]
             .dropna().set_index('Date'),
-            use_container_width=True
+            width='stretch'
         )
 
 
@@ -370,7 +370,7 @@ elif page == "🔮  Prediction":
         default=['Price_Oil', 'Price_Dollar']
     )
 
-    run = st.button("🚀 Train Model", type="primary", use_container_width=True)
+    run = st.button("🚀 Train Model", type="primary", width='stretch')
 
     if run:
         with st.spinner("Training … please wait"):
@@ -481,7 +481,7 @@ elif page == "🔮  Prediction":
                         hovermode='x unified',
                         legend=dict(orientation='h', y=1.02)
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
 
                     # Residuals
                     st.subheader("📉 Residuals")
@@ -492,12 +492,13 @@ elif page == "🔮  Prediction":
                     fig_r.add_hline(y=0, line_color='white', line_dash='dash')
                     fig_r.update_layout(height=240, template='plotly_dark',
                                         yaxis_title="Residual (USD)", xaxis_title="")
-                    st.plotly_chart(fig_r, use_container_width=True)
+                    st.plotly_chart(fig_r, width='stretch')
 
                     st.info("💡 LSTM uses sequential windows — feature importance is not available for deep learning models.")
 
                 except ImportError:
-                    st.error("❌ TensorFlow غير مثبت. شغلي: `pip install tensorflow` ثم أعيدي التشغيل.")
+                    st.warning("⚠️ LSTM requires TensorFlow which isn't available on this server (Python 3.14 not yet supported). Run locally with `pip install tensorflow` to use this model.")
+                    st.info("💡 Try **Random Forest** or **XGBoost** instead — they give excellent results on this dataset!")
 
                 st.stop()   # skip the ML flow below for LSTM
 
@@ -572,7 +573,7 @@ elif page == "🔮  Prediction":
                               xaxis_title="Date", yaxis_title="Gold Price (USD)",
                               hovermode='x unified',
                               legend=dict(orientation='h', y=1.02))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
             # ── Residuals ─────────────────────────────────────────────────────────
             st.subheader("📉 Residuals")
@@ -582,7 +583,7 @@ elif page == "🔮  Prediction":
             fig_r.add_hline(y=0, line_color='white', line_dash='dash')
             fig_r.update_layout(height=240, template='plotly_dark',
                                 yaxis_title="Residual (USD)", xaxis_title="")
-            st.plotly_chart(fig_r, use_container_width=True)
+            st.plotly_chart(fig_r, width='stretch')
 
             # ── Feature Importance ────────────────────────────────────────────────
             if hasattr(model, 'feature_importances_'):
@@ -594,7 +595,7 @@ elif page == "🔮  Prediction":
                                color='Importance', color_continuous_scale='Oranges')
                 fig_i.update_layout(height=max(300, len(feat_cols) * 25),
                                     template='plotly_dark', showlegend=False)
-                st.plotly_chart(fig_i, use_container_width=True)
+                st.plotly_chart(fig_i, width='stretch')
 
     else:
         st.info("👆 Choose your settings above and click **Train Model** to start.")
@@ -603,7 +604,7 @@ elif page == "🔮  Prediction":
             filtered_df[['Date','Price_Gold','Price_Oil',
                          'Price_Dollar','Price_Stocks']]
             .dropna().tail(10).set_index('Date'),
-            use_container_width=True
+            width='stretch'
         )
 
 
