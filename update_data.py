@@ -140,7 +140,10 @@ else:
 
 # رتبي الأعمدة بنفس ترتيب الملف الأصلي
 new_rows = new_rows.reset_index().rename(columns={"index": "Date", "Datetime": "Date"})
-new_rows["Date"] = pd.to_datetime(new_rows["Date"]).dt.strftime("%-m/%-d/%Y")
+# Cross-platform date format (M/D/YYYY without zero padding)
+new_rows["Date"] = pd.to_datetime(new_rows["Date"]).apply(
+    lambda d: f"{d.month}/{d.day}/{d.year}"
+)
 
 cols = [
     "Date",
