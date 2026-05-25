@@ -293,6 +293,162 @@ if page == "Dashboard":
     )
     st.plotly_chart(fig, width='stretch')
 
+    # ── Technical Indicators ──────────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("Technical Indicators")
+
+    ti_c1, ti_c2 = st.columns(2)
+    with ti_c1:
+        bb_period = st.slider("Bollinger Bands Period", 10, 50, 20, key="bb_p")
+    with ti_c2:
+        rsi_period = st.slider("RSI Period", 7, 21, 14, key="rsi_p")
+
+    tech_df = filtered_df[['Date', 'Price_Gold']].dropna().copy().reset_index(drop=True)
+
+    # Bollinger Bands
+    tech_df['SMA']      = tech_df['Price_Gold'].rolling(bb_period).mean()
+    tech_df['STD']      = tech_df['Price_Gold'].rolling(bb_period).std()
+    tech_df['BB_upper'] = tech_df['SMA'] + 2 * tech_df['STD']
+    tech_df['BB_lower'] = tech_df['SMA'] - 2 * tech_df['STD']
+    tech_df['BB_pct']   = (tech_df['Price_Gold'] - tech_df['BB_lower']) / (
+                           tech_df['BB_upper'] - tech_df['BB_lower'])
+
+    # RSI
+    delta = tech_df['Price_Gold'].diff()
+    gain  = delta.clip(lower=0).rolling(rsi_period).mean()
+    loss  = (-delta.clip(upper=0)).rolling(rsi_period).mean()
+    rs    = gain / loss.replace(0, np.nan)
+    tech_df['RSI'] = 100 - (100 / (1 + rs))
+
+    rsi_valid = tech_df['RSI'].dropna()
+    current_rsi = rsi_valid.iloc[-1] if not rsi_valid.empty else None
+    latest_price = tech_df['Price_Gold'].iloc[-1]
+    latest_upper = tech_df['BB_upper'].iloc[-1]
+    latest_lower = tech_df['BB_lower'].iloc[-1]
+    latest_sma   = tech_df['SMA'].iloc[-1]
+
+    # Signal cards
+    if current_rsi is not None:
+        if current_rsi >= 70:
+            rsi_label, rsi_delta = "Overbought", f"{current_rsi:.1f} — Sell signal"
+        elif current_rsi <= 30:
+            rsi_label, rsi_delta = "Oversold", f"{current_rsi:.1f} — Buy signal"
+        else:
+            rsi_label, rsi_delta = "Neutral", f"{current_rsi:.1f}"
+
+        if not np.isnan(latest_upper):
+            bb_width = latest_upper - latest_lower
+            bb_pos   = (latest_price - latest_lower) / bb_width * 100 if bb_width else 50
+            if bb_pos >= 80:
+                bb_label = "Near Upper Band"
+            elif bb_pos <= 20:
+                bb_label = "Near Lower Band"
+            else:
+                bb_label = "Inside Bands"
+        else:
+            bb_pos, bb_label = 50, "—"
+
+        sm1, sm2, sm3, sm4 = st.columns(4)
+        sm1.metric("RSI", f"{current_rsi:.1f}", rsi_label)
+        sm2.metric("SMA (BB mid)", f"${latest_sma:,.2f}" if not np.isnan(latest_sma) else "—")
+        sm3.metric("Upper Band", f"${latest_upper:,.2f}" if not np.isnan(latest_upper) else "—")
+        sm4.metric("Lower Band", f"${latest_lower:,.2f}" if not np.isnan(latest_lower) else "—")
+
+    bb_col, rsi_col = st.columns(2)
+
+    # ── Bollinger Bands Chart ─────────────────────────────────────────────────
+    with bb_col:
+        st.markdown("**Bollinger Bands**")
+        bb_plot = tech_df.dropna(subset=['SMA'])
+        fig_bb = go.Figure()
+
+        # Shaded band area
+        fig_bb.add_trace(go.Scatter(
+            x=bb_plot['Date'], y=bb_plot['BB_upper'],
+            line=dict(color='rgba(46,95,101,0)', width=0),
+            showlegend=False, name='Upper'
+        ))
+        fig_bb.add_trace(go.Scatter(
+            x=bb_plot['Date'], y=bb_plot['BB_lower'],
+            fill='tonexty', fillcolor='rgba(46,95,101,0.18)',
+            line=dict(color='rgba(46,95,101,0)', width=0),
+            showlegend=False, name='Lower'
+        ))
+        # Bands
+        fig_bb.add_trace(go.Scatter(
+            x=bb_plot['Date'], y=bb_plot['BB_upper'],
+            line=dict(color='#2e5f65', width=1.2, dash='dot'),
+            name='Upper Band'
+        ))
+        fig_bb.add_trace(go.Scatter(
+            x=bb_plot['Date'], y=bb_plot['BB_lower'],
+            line=dict(color='#2e5f65', width=1.2, dash='dot'),
+            name='Lower Band'
+        ))
+        # SMA
+        fig_bb.add_trace(go.Scatter(
+            x=bb_plot['Date'], y=bb_plot['SMA'],
+            line=dict(color='#e0f7fa', width=1.5, dash='dash'),
+            name=f'SMA {bb_period}'
+        ))
+        # Price
+        fig_bb.add_trace(go.Scatter(
+            x=bb_plot['Date'], y=bb_plot['Price_Gold'],
+            line=dict(color='#ffc72c', width=2),
+            name='Gold Price'
+        ))
+        fig_bb.update_layout(
+            height=360, template='plotly_dark',
+            paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+            yaxis_title="Price (USD)", hovermode='x unified',
+            legend=dict(orientation='h', y=1.02, font=dict(size=10)),
+            margin=dict(l=0, r=0, t=10, b=0)
+        )
+        st.plotly_chart(fig_bb, width='stretch')
+
+    # ── RSI Chart ─────────────────────────────────────────────────────────────
+    with rsi_col:
+        st.markdown("**Relative Strength Index (RSI)**")
+        rsi_plot = tech_df.dropna(subset=['RSI'])
+        fig_rsi = go.Figure()
+
+        # Overbought / Oversold zones
+        fig_rsi.add_hrect(y0=70, y1=100, fillcolor='rgba(239,68,68,0.08)',
+                          line_width=0, annotation_text="Overbought",
+                          annotation_position="top right",
+                          annotation=dict(font_size=10, font_color='#ef4444'))
+        fig_rsi.add_hrect(y0=0, y1=30, fillcolor='rgba(34,197,94,0.08)',
+                          line_width=0, annotation_text="Oversold",
+                          annotation_position="bottom right",
+                          annotation=dict(font_size=10, font_color='#22c55e'))
+
+        # Reference lines
+        fig_rsi.add_hline(y=70, line=dict(color='#ef4444', width=1, dash='dot'))
+        fig_rsi.add_hline(y=30, line=dict(color='#22c55e', width=1, dash='dot'))
+        fig_rsi.add_hline(y=50, line=dict(color='#4a5568', width=1, dash='dot'))
+
+        # RSI line — colored by zone
+        rsi_colors = ['#ef4444' if v >= 70 else '#22c55e' if v <= 30 else '#ffc72c'
+                      for v in rsi_plot['RSI']]
+        fig_rsi.add_trace(go.Scatter(
+            x=rsi_plot['Date'], y=rsi_plot['RSI'],
+            mode='lines', name=f'RSI ({rsi_period})',
+            line=dict(color='#ffc72c', width=2)
+        ))
+
+        fig_rsi.update_layout(
+            height=360, template='plotly_dark',
+            paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+            yaxis=dict(title="RSI", range=[0, 100],
+                       tickvals=[0, 30, 50, 70, 100]),
+            hovermode='x unified',
+            legend=dict(orientation='h', y=1.02, font=dict(size=10)),
+            margin=dict(l=0, r=0, t=10, b=0)
+        )
+        st.plotly_chart(fig_rsi, width='stretch')
+
+    st.markdown("---")
+
     # Comparison & Correlation
     left, right = st.columns(2)
 
@@ -609,6 +765,7 @@ elif page == "About":
             <ul style="color:#e0f7fa; line-height:2; margin:0; padding-left:20px;">
                 <li>Candlestick and Line charts</li>
                 <li>Key performance metrics</li>
+                <li>RSI and Bollinger Bands indicators</li>
                 <li>Asset comparison (normalized)</li>
                 <li>Correlation heatmap</li>
                 <li>Yearly average bar chart</li>
