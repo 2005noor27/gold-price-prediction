@@ -49,7 +49,15 @@ def clean_volume(x):
 # ── قراءة الملف الحالي ───────────────────────────────────────────────────────────
 print("📂 Reading TSDATA.csv ...")
 df_old = pd.read_csv(CSV_PATH)
-df_old["Date"] = pd.to_datetime(df_old["Date"])
+df_old["Date"] = pd.to_datetime(df_old["Date"], format="mixed")
+df_old = df_old.drop_duplicates(subset=["Date"]).sort_values("Date").reset_index(drop=True)
+
+# أعيدي كتابة الملف بصيغة تاريخ موحدة
+df_old["Date"] = df_old["Date"].apply(lambda d: f"{d.month}/{d.day}/{d.year}")
+df_old.to_csv(CSV_PATH, index=False)
+print(f"   Fixed & cleaned: {len(df_old)} rows")
+
+df_old["Date"] = pd.to_datetime(df_old["Date"], format="mixed")
 last_date = df_old["Date"].max()
 start_date = last_date + timedelta(days=1)
 today = datetime.today()
