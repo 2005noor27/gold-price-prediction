@@ -139,37 +139,72 @@ df = load_data()
 
 # ─── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🥇 Gold Price App")
-    st.markdown("---")
-    page = st.radio("Navigate", ["📊 Dashboard", "🔮 Prediction"], label_visibility="collapsed")
+    # Logo / Header
+    st.markdown("""
+    <div style="text-align:center; padding: 16px 0 8px 0;">
+        <div style="font-size:3rem; line-height:1;">🥇</div>
+        <div style="font-size:1.25rem; font-weight:800; color:#FFD700; letter-spacing:1px; margin-top:6px;">
+            Gold Price
+        </div>
+        <div style="font-size:0.78rem; color:#9090bb; margin-top:2px; letter-spacing:2px;">
+            PREDICTION APP
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.markdown("### 📅 Date Range")
-    min_date = df['Date'].min().date()
-    max_date = df['Date'].max().date()
+    st.markdown("<hr style='border-color:#2a2a4a; margin:8px 0 12px 0;'>", unsafe_allow_html=True)
 
-    start_date = st.date_input("From", value=pd.to_datetime("2010-01-01").date(),
-                               min_value=min_date, max_value=max_date)
-    end_date   = st.date_input("To",   value=max_date,
-                               min_value=min_date, max_value=max_date)
+    # Navigation
+    page = st.radio(
+        "nav",
+        ["📊  Dashboard", "🔮  Prediction", "ℹ️  About"],
+        label_visibility="collapsed"
+    )
 
-    st.markdown("---")
-    st.caption(f"📦 Source: Investing.com")
-    st.caption(f"🗓️ Period: 1986 – 2025")
+    st.markdown("<hr style='border-color:#2a2a4a; margin:12px 0;'>", unsafe_allow_html=True)
+
+    # Date range (only show for Dashboard & Prediction)
+    if page != "ℹ️  About":
+        st.markdown("**📅 Date Range**")
+        min_date = df['Date'].min().date()
+        max_date = df['Date'].max().date()
+
+        start_date = st.date_input("From", value=pd.to_datetime("2010-01-01").date(),
+                                   min_value=min_date, max_value=max_date)
+        end_date   = st.date_input("To",   value=max_date,
+                                   min_value=min_date, max_value=max_date)
+
+        st.markdown("<hr style='border-color:#2a2a4a; margin:12px 0;'>", unsafe_allow_html=True)
+    else:
+        start_date = pd.to_datetime("2010-01-01").date()
+        end_date   = df['Date'].max().date()
+
+    # Stats
+    st.markdown(f"""
+    <div style="font-size:0.78rem; color:#7070aa; line-height:2;">
+        📦 &nbsp;Source: Investing.com<br>
+        🗓️ &nbsp;Period: 1986 – 2025<br>
+        📈 &nbsp;9,933 trading days
+    </div>
+    """, unsafe_allow_html=True)
 
 # Filter
 mask        = (df['Date'].dt.date >= start_date) & (df['Date'].dt.date <= end_date)
 filtered_df = df[mask].copy()
-st.sidebar.caption(f"📈 {len(filtered_df):,} trading days")
 
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  DASHBOARD
 # ════════════════════════════════════════════════════════════════════════════════
-if page == "📊 Dashboard":
+if page == "📊  Dashboard":
 
-    st.title("📊 Gold Price Dashboard")
-    st.markdown(f"**{start_date}** → **{end_date}**  |  {len(filtered_df):,} trading days")
+    st.markdown("""
+    <h1 style="display:flex; align-items:center; gap:12px;">
+        <span style="font-size:2.2rem;">📊</span>
+        <span>Gold Price Dashboard</span>
+    </h1>
+    """, unsafe_allow_html=True)
+    st.markdown(f"🗓️ **{start_date}** → **{end_date}**  &nbsp;|&nbsp;  📈 {len(filtered_df):,} trading days")
 
     # ── KPI Cards ───────────────────────────────────────────────────────────────
     gold_clean = filtered_df.dropna(subset=['Price_Gold'])
@@ -180,10 +215,10 @@ if page == "📊 Dashboard":
         pct    = (delta / first['Price_Gold']) * 100
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Current Price",  f"${latest['Price_Gold']:,.2f}", f"{delta:+,.2f}  ({pct:+.1f}%)")
-        c2.metric("Period High",    f"${gold_clean['High_Gold'].max():,.2f}")
-        c3.metric("Period Low",     f"${gold_clean['Low_Gold'].min():,.2f}")
-        c4.metric("Average Price",  f"${gold_clean['Price_Gold'].mean():,.2f}")
+        c1.metric("💰 Current Price",  f"${latest['Price_Gold']:,.2f}", f"{delta:+,.2f}  ({pct:+.1f}%)")
+        c2.metric("🚀 Period High",    f"${gold_clean['High_Gold'].max():,.2f}")
+        c3.metric("📉 Period Low",     f"${gold_clean['Low_Gold'].min():,.2f}")
+        c4.metric("📊 Average Price",  f"${gold_clean['Price_Gold'].mean():,.2f}")
 
     st.markdown("---")
 
@@ -310,9 +345,14 @@ if page == "📊 Dashboard":
 # ════════════════════════════════════════════════════════════════════════════════
 #  PREDICTION
 # ════════════════════════════════════════════════════════════════════════════════
-elif page == "🔮 Prediction":
+elif page == "🔮  Prediction":
 
-    st.title("🔮 Gold Price Prediction")
+    st.markdown("""
+    <h1 style="display:flex; align-items:center; gap:12px;">
+        <span style="font-size:2.2rem;">🔮</span>
+        <span>Gold Price Prediction</span>
+    </h1>
+    """, unsafe_allow_html=True)
     st.markdown("Train a machine learning model to predict gold prices from historical patterns.")
 
     # ── Config ──────────────────────────────────────────────────────────────────
@@ -442,3 +482,137 @@ elif page == "🔮 Prediction":
             .dropna().tail(10).set_index('Date'),
             use_container_width=True
         )
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+#  ABOUT
+# ════════════════════════════════════════════════════════════════════════════════
+elif page == "ℹ️  About":
+
+    st.markdown("""
+    <h1 style="display:flex; align-items:center; gap:12px;">
+        <span style="font-size:2.2rem;">🥇</span>
+        <span>About This Project</span>
+    </h1>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="
+        background: linear-gradient(135deg, #13131f, #1c1c2e);
+        border: 1px solid #2a2a4a;
+        border-left: 4px solid #FFD700;
+        border-radius: 12px;
+        padding: 24px 28px;
+        margin-bottom: 24px;
+    ">
+        <p style="color:#e0e0f0; font-size:1.05rem; line-height:1.8; margin:0;">
+            This app analyzes <strong style="color:#FFD700;">gold price data</strong> spanning nearly
+            four decades (1986–2025) and builds machine learning models to predict future prices.
+            It covers the relationship between gold and key global indicators: crude oil,
+            the US dollar index, and the S&P 500.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Cards row
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        st.markdown("""
+        <div style="background:#13131f; border:1px solid #2a2a4a; border-radius:12px; padding:20px; text-align:center;">
+            <div style="font-size:2.5rem;">📅</div>
+            <div style="color:#FFD700; font-size:1.6rem; font-weight:800; margin:8px 0;">39 Years</div>
+            <div style="color:#9090bb; font-size:0.85rem;">of daily market data<br>1986 – 2025</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c2:
+        st.markdown("""
+        <div style="background:#13131f; border:1px solid #2a2a4a; border-radius:12px; padding:20px; text-align:center;">
+            <div style="font-size:2.5rem;">📈</div>
+            <div style="color:#FFD700; font-size:1.6rem; font-weight:800; margin:8px 0;">9,933</div>
+            <div style="color:#9090bb; font-size:0.85rem;">trading days<br>in the dataset</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c3:
+        st.markdown("""
+        <div style="background:#13131f; border:1px solid #2a2a4a; border-radius:12px; padding:20px; text-align:center;">
+            <div style="font-size:2.5rem;">🤖</div>
+            <div style="color:#FFD700; font-size:1.6rem; font-weight:800; margin:8px 0;">3 Models</div>
+            <div style="color:#9090bb; font-size:0.85rem;">Random Forest · XGBoost<br>Linear Regression</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Dataset section
+    col_l, col_r = st.columns(2)
+
+    with col_l:
+        st.markdown("### 📦 Dataset")
+        st.markdown("""
+        <div style="background:#13131f; border:1px solid #2a2a4a; border-radius:10px; padding:16px;">
+        <table style="width:100%; color:#c0c0e0; font-size:0.88rem; border-collapse:collapse;">
+            <tr style="border-bottom:1px solid #2a2a4a;">
+                <td style="padding:8px; color:#FFD700; font-weight:600;">Column</td>
+                <td style="padding:8px; color:#FFD700; font-weight:600;">Description</td>
+            </tr>
+            <tr style="border-bottom:1px solid #1a1a2e;">
+                <td style="padding:8px;">🥇 Price_Gold</td>
+                <td style="padding:8px;">Gold closing price (USD/oz)</td>
+            </tr>
+            <tr style="border-bottom:1px solid #1a1a2e;">
+                <td style="padding:8px;">🛢️ Price_Oil</td>
+                <td style="padding:8px;">Crude oil price (USD)</td>
+            </tr>
+            <tr style="border-bottom:1px solid #1a1a2e;">
+                <td style="padding:8px;">💵 Price_Dollar</td>
+                <td style="padding:8px;">US Dollar Index (DXY)</td>
+            </tr>
+            <tr>
+                <td style="padding:8px;">📈 Price_Stocks</td>
+                <td style="padding:8px;">S&P 500 index</td>
+            </tr>
+        </table>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_r:
+        st.markdown("### 🛠️ Tech Stack")
+        tech = [
+            ("🌐", "Streamlit",    "Web app framework"),
+            ("📊", "Plotly",       "Interactive charts"),
+            ("🤖", "scikit-learn", "ML models"),
+            ("⚡", "XGBoost",      "Gradient boosting"),
+            ("🐼", "Pandas",       "Data processing"),
+            ("🔢", "NumPy",        "Numerical computing"),
+        ]
+        for icon, name, desc in tech:
+            st.markdown(f"""
+            <div style="display:flex; align-items:center; gap:12px;
+                        background:#13131f; border:1px solid #2a2a4a;
+                        border-radius:8px; padding:10px 14px; margin-bottom:6px;">
+                <span style="font-size:1.3rem;">{icon}</span>
+                <div>
+                    <span style="color:#FFD700; font-weight:600;">{name}</span>
+                    <span style="color:#7070aa; font-size:0.82rem; margin-left:8px;">{desc}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Footer
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style="text-align:center; padding:20px; border-top:1px solid #2a2a4a; margin-top:16px;">
+        <span style="color:#7070aa; font-size:0.85rem;">
+            Built by &nbsp;<strong style="color:#FFD700;">Noor Alshorman</strong>
+            &nbsp;·&nbsp; Data from
+            <a href="https://investing.com" target="_blank"
+               style="color:#FFD700; text-decoration:none;">Investing.com</a>
+            &nbsp;·&nbsp;
+            <a href="https://github.com/2005noor27/gold-price-prediction" target="_blank"
+               style="color:#FFD700; text-decoration:none;">GitHub ↗</a>
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
