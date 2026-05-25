@@ -22,29 +22,29 @@ st.set_page_config(
 st.markdown("""
 <style>
 /* Background */
-.stApp { background-color: #00296b; }
-[data-testid="stSidebar"] { background-color: #001d4e; border-right: 2px solid #00509d; }
+.stApp { background-color: #09090b; }
+[data-testid="stSidebar"] { background-color: #0d0d10; border-right: 1px solid #2e5f65; }
 
 /* Headings */
-h1 { color: #ffd500 !important; letter-spacing: 1px; }
-h2, h3 { color: #fdc500 !important; }
+h1 { color: #ffc72c !important; letter-spacing: 1px; }
+h2, h3 { color: #ffc72c !important; }
 
 /* Metric cards */
 [data-testid="stMetric"] {
-    background: linear-gradient(135deg, #003f88, #00509d);
-    border: 1px solid #00509d;
-    border-top: 3px solid #fdc500;
+    background: #1c1f23;
+    border: 1px solid #2e5f65;
+    border-top: 3px solid #ffc72c;
     border-radius: 12px;
     padding: 16px 20px;
 }
-[data-testid="stMetricValue"] { font-size: 1.5rem; color: #ffd500 !important; font-weight: 700; }
-[data-testid="stMetricLabel"] { font-size: 0.82rem; color: #a0c4ff; }
+[data-testid="stMetricValue"] { font-size: 1.5rem; color: #ffc72c !important; font-weight: 700; }
+[data-testid="stMetricLabel"] { font-size: 0.82rem; color: #e0f7fa; opacity: 0.7; }
 [data-testid="stMetricDelta"] { font-size: 0.85rem; }
 
 /* Buttons */
 .stButton > button {
-    background: linear-gradient(135deg, #fdc500, #ffd500);
-    color: #00296b;
+    background: #ffc72c;
+    color: #09090b;
     font-weight: 800;
     border: none;
     border-radius: 8px;
@@ -52,21 +52,21 @@ h2, h3 { color: #fdc500 !important; }
     transition: all 0.2s ease;
     letter-spacing: 0.5px;
 }
-.stButton > button:hover { opacity: 0.88; transform: translateY(-1px); box-shadow: 0 4px 15px rgba(253,197,0,0.4); }
+.stButton > button:hover { opacity: 0.88; transform: translateY(-1px); box-shadow: 0 4px 15px rgba(255,199,44,0.35); }
 
 /* Selectbox / Sliders */
 [data-testid="stSelectbox"] label,
 [data-testid="stSlider"] label,
-[data-testid="stMultiSelect"] label { color: #a0c4ff !important; font-size: 0.9rem; }
+[data-testid="stMultiSelect"] label { color: #e0f7fa !important; font-size: 0.9rem; opacity: 0.8; }
 
 /* Divider */
-hr { border-color: #00509d; }
+hr { border-color: #2e5f65; }
 
 /* Expander */
-[data-testid="stExpander"] { border: 1px solid #00509d; border-radius: 8px; background: #003f88; }
+[data-testid="stExpander"] { border: 1px solid #2e5f65; border-radius: 8px; background: #1c1f23; }
 
 /* Sidebar text */
-.stRadio label { color: #e0f0ff !important; }
+.stRadio label { color: #e0f7fa !important; }
 .block-container { padding-top: 1.5rem; }
 
 /* Info/warning boxes */
@@ -148,16 +148,16 @@ with st.sidebar:
     st.markdown("""
     <div style="text-align:center; padding: 16px 0 8px 0;">
         <div style="font-size:3rem; line-height:1;">🥇</div>
-        <div style="font-size:1.25rem; font-weight:800; color:#ffd500; letter-spacing:1px; margin-top:6px;">
+        <div style="font-size:1.25rem; font-weight:800; color:#ffc72c; letter-spacing:1px; margin-top:6px;">
             Gold Price
         </div>
-        <div style="font-size:0.78rem; color:#a0c4ff; margin-top:2px; letter-spacing:2px;">
+        <div style="font-size:0.78rem; color:#e0f7fa; opacity:0.7; margin-top:2px; letter-spacing:2px;">
             PREDICTION APP
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("<hr style='border-color:#00509d; margin:8px 0 12px 0;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:#2e5f65; margin:8px 0 12px 0;'>", unsafe_allow_html=True)
 
     # Navigation
     page = st.radio(
@@ -166,7 +166,7 @@ with st.sidebar:
         label_visibility="collapsed"
     )
 
-    st.markdown("<hr style='border-color:#00509d; margin:12px 0;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:#2e5f65; margin:12px 0;'>", unsafe_allow_html=True)
 
     # Date range (only show for Dashboard & Prediction)
     if page != "ℹ️  About":
@@ -179,14 +179,14 @@ with st.sidebar:
         end_date   = st.date_input("To",   value=max_date,
                                    min_value=min_date, max_value=max_date)
 
-        st.markdown("<hr style='border-color:#00509d; margin:12px 0;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='border-color:#2e5f65; margin:12px 0;'>", unsafe_allow_html=True)
     else:
         start_date = pd.to_datetime("2010-01-01").date()
         end_date   = df['Date'].max().date()
 
     # Stats
     st.markdown(f"""
-    <div style="font-size:0.78rem; color:#6090cc; line-height:2;">
+    <div style="font-size:0.78rem; color:#2e5f65; line-height:2;">
         📦 &nbsp;Source: Investing.com<br>
         🗓️ &nbsp;Period: 1986 – 2025<br>
         📈 &nbsp;9,933 trading days
@@ -248,15 +248,15 @@ if page == "📊  Dashboard":
             low=candle_df['Low_Gold'],
             close=candle_df['Price_Gold'],
             name='OHLC',
-            increasing=dict(line=dict(color='#ffd500', width=1),
-                            fillcolor='rgba(253,197,0,0.85)'),
+            increasing=dict(line=dict(color='#ffc72c', width=1),
+                            fillcolor='rgba(255,199,44,0.85)'),
             decreasing=dict(line=dict(color='#ef4444', width=1),
                             fillcolor='rgba(239,68,68,0.75)'),
         ))
         # Volume bars underneath
         if 'Volume_Gold' in candle_df.columns:
             vol = candle_df.dropna(subset=['Volume_Gold'])
-            colors_v = ['rgba(253,197,0,0.4)' if c >= o else 'rgba(239,68,68,0.35)'
+            colors_v = ['rgba(255,199,44,0.4)' if c >= o else 'rgba(239,68,68,0.35)'
                         for c, o in zip(vol['Price_Gold'], vol['Open_Gold'])]
             fig.add_trace(go.Bar(
                 x=vol['Date'], y=vol['Volume_Gold'],
@@ -273,8 +273,8 @@ if page == "📊  Dashboard":
         fig.add_trace(go.Scatter(
             x=filtered_df['Date'], y=filtered_df['Price_Gold'],
             mode='lines', name='Close',
-            line=dict(color='#ffd500', width=2),
-            fill='tozeroy', fillcolor='rgba(253,197,0,0.12)'
+            line=dict(color='#ffc72c', width=2),
+            fill='tozeroy', fillcolor='rgba(255,199,44,0.08)'
         ))
         fig.add_trace(go.Scatter(
             x=filtered_df['Date'], y=filtered_df['High_Gold'],
@@ -289,7 +289,7 @@ if page == "📊  Dashboard":
         ))
 
     fig.update_layout(
-        height=480, template='plotly_dark', paper_bgcolor='#003f88', plot_bgcolor='#00296b',
+        height=480, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
         xaxis_title="Date", yaxis_title="Price (USD)",
         hovermode='x unified',
         legend=dict(orientation='h', y=1.02, x=0),
@@ -312,13 +312,13 @@ if page == "📊  Dashboard":
             norm['Date'] = cmp['Date'].values
 
             fig2 = go.Figure()
-            palette = {'Gold':'#ffd500','Oil':'#00d4aa',
-                       'Dollar Index':'#60aaff','S&P 500':'#ff8c42'}
+            palette = {'Gold':'#ffc72c','Oil':'#2e5f65',
+                       'Dollar Index':'#e0f7fa','S&P 500':'#4a5568'}
             for col, color in palette.items():
                 fig2.add_trace(go.Scatter(x=norm['Date'], y=norm[col],
                                           mode='lines', name=col,
                                           line=dict(color=color, width=1.5)))
-            fig2.update_layout(height=340, template='plotly_dark', paper_bgcolor='#003f88', plot_bgcolor='#00296b',
+            fig2.update_layout(height=340, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
                                yaxis_title="Normalized (0–100)",
                                hovermode='x unified',
                                legend=dict(orientation='h', y=1.02))
@@ -337,7 +337,7 @@ if page == "📊  Dashboard":
                 color_continuous_scale='RdYlGn',
                 zmin=-1, zmax=1
             )
-            fig3.update_layout(height=340, template='plotly_dark', paper_bgcolor='#003f88', plot_bgcolor='#00296b')
+            fig3.update_layout(height=340, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b')
             st.plotly_chart(fig3, width='stretch')
         else:
             st.info("Not enough data for correlation.")
@@ -349,9 +349,9 @@ if page == "📊  Dashboard":
         st.subheader("📅 Yearly Average Gold Price")
         yearly = filtered_df.groupby('Year')['Price_Gold'].mean().reset_index()
         fig4 = px.bar(yearly, x='Year', y='Price_Gold',
-                      color='Price_Gold', color_continuous_scale='Oranges',
+                      color='Price_Gold', color_continuous_scale=[[0,'#2e5f65'],[0.5,'#ffc72c'],[1,'#ffffff']],
                       labels={'Price_Gold': 'Avg Price (USD)'})
-        fig4.update_layout(height=300, template='plotly_dark', paper_bgcolor='#003f88', plot_bgcolor='#00296b',
+        fig4.update_layout(height=300, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
                            showlegend=False, xaxis_title="")
         st.plotly_chart(fig4, width='stretch')
 
@@ -361,9 +361,9 @@ if page == "📊  Dashboard":
         if not vol.empty:
             fig5 = go.Figure(go.Bar(
                 x=vol['Date'], y=vol['Volume_Gold'],
-                marker_color='rgba(253,197,0,0.7)'
+                marker_color='rgba(255,199,44,0.7)'
             ))
-            fig5.update_layout(height=300, template='plotly_dark', paper_bgcolor='#003f88', plot_bgcolor='#00296b',
+            fig5.update_layout(height=300, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
                                yaxis_title="Volume", xaxis_title="")
             st.plotly_chart(fig5, width='stretch')
         else:
@@ -373,9 +373,9 @@ if page == "📊  Dashboard":
     st.subheader("📉 Daily Change % Distribution")
     chg = filtered_df['Change%_Gold'].dropna() * 100
     if not chg.empty:
-        fig6 = px.histogram(chg, nbins=80, color_discrete_sequence=['#fdc500'],
+        fig6 = px.histogram(chg, nbins=80, color_discrete_sequence=['#ffc72c'],
                             labels={'value': 'Daily Change (%)', 'count': 'Days'})
-        fig6.update_layout(height=250, template='plotly_dark', paper_bgcolor='#003f88', plot_bgcolor='#00296b',
+        fig6.update_layout(height=250, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
                            xaxis_title="Daily Change (%)", showlegend=False)
         st.plotly_chart(fig6, width='stretch')
 
@@ -506,12 +506,12 @@ elif page == "🔮  Prediction":
                     fig.add_trace(go.Scatter(
                         x=ml['Date'], y=ml['Price_Gold'],
                         mode='lines', name='Full History',
-                        line=dict(color='rgba(253,197,0,0.25)', width=1)
+                        line=dict(color='rgba(255,199,44,0.2)', width=1)
                     ))
                     fig.add_trace(go.Scatter(
                         x=d_te, y=y_te,
                         mode='lines', name='Actual (Test)',
-                        line=dict(color='#ffd500', width=2)
+                        line=dict(color='#ffc72c', width=2)
                     ))
                     fig.add_trace(go.Scatter(
                         x=d_te, y=y_pred,
@@ -523,7 +523,7 @@ elif page == "🔮  Prediction":
                                   annotation_text='Train | Test',
                                   annotation_position='top left')
                     fig.update_layout(
-                        height=480, template='plotly_dark', paper_bgcolor='#003f88', plot_bgcolor='#00296b',
+                        height=480, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
                         xaxis_title="Date", yaxis_title="Gold Price (USD)",
                         hovermode='x unified',
                         legend=dict(orientation='h', y=1.02)
@@ -537,7 +537,7 @@ elif page == "🔮  Prediction":
                     fig_r = go.Figure(go.Bar(x=d_te, y=resid,
                                             marker_color=colors_r))
                     fig_r.add_hline(y=0, line_color='white', line_dash='dash')
-                    fig_r.update_layout(height=240, template='plotly_dark', paper_bgcolor='#003f88', plot_bgcolor='#00296b',
+                    fig_r.update_layout(height=240, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
                                         yaxis_title="Residual (USD)", xaxis_title="")
                     st.plotly_chart(fig_r, width='stretch')
 
@@ -611,12 +611,12 @@ elif page == "🔮  Prediction":
             fig.add_trace(go.Scatter(x=dates, y=y, mode='lines', name='Full History',
                                      line=dict(color='rgba(253,197,0,0.3)', width=1)))
             fig.add_trace(go.Scatter(x=d_te, y=y_te, mode='lines', name='Actual (Test)',
-                                     line=dict(color='#ffd500', width=2)))
+                                     line=dict(color='#ffc72c', width=2)))
             fig.add_trace(go.Scatter(x=d_te, y=y_pred, mode='lines', name='Predicted',
                                      line=dict(color='#FF4444', width=2, dash='dash')))
             fig.add_vline(x=d_te.iloc[0], line_dash='dash', line_color='gray',
                           annotation_text='Train | Test', annotation_position='top left')
-            fig.update_layout(height=480, template='plotly_dark', paper_bgcolor='#003f88', plot_bgcolor='#00296b',
+            fig.update_layout(height=480, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
                               xaxis_title="Date", yaxis_title="Gold Price (USD)",
                               hovermode='x unified',
                               legend=dict(orientation='h', y=1.02))
@@ -628,7 +628,7 @@ elif page == "🔮  Prediction":
             colors_r = ['#FF4444' if r < 0 else '#4CAF50' for r in resid]
             fig_r = go.Figure(go.Bar(x=d_te, y=resid, marker_color=colors_r))
             fig_r.add_hline(y=0, line_color='white', line_dash='dash')
-            fig_r.update_layout(height=240, template='plotly_dark', paper_bgcolor='#003f88', plot_bgcolor='#00296b',
+            fig_r.update_layout(height=240, template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
                                 yaxis_title="Residual (USD)", xaxis_title="")
             st.plotly_chart(fig_r, width='stretch')
 
@@ -639,9 +639,9 @@ elif page == "🔮  Prediction":
                                     'Importance': model.feature_importances_})\
                         .sort_values('Importance', ascending=True)
                 fig_i = px.bar(imp, x='Importance', y='Feature', orientation='h',
-                               color='Importance', color_continuous_scale='Oranges')
+                               color='Importance', color_continuous_scale=[[0,'#2e5f65'],[0.5,'#ffc72c'],[1,'#ffffff']])
                 fig_i.update_layout(height=max(300, len(feat_cols) * 25),
-                                    template='plotly_dark', paper_bgcolor='#003f88', plot_bgcolor='#00296b', showlegend=False)
+                                    template='plotly_dark', paper_bgcolor='#1c1f23', plot_bgcolor='#09090b', showlegend=False)
                 st.plotly_chart(fig_i, width='stretch')
 
     else:
@@ -677,7 +677,7 @@ elif page == "ℹ️  About":
         margin-bottom: 24px;
     ">
         <p style="color:#e0e0f0; font-size:1.05rem; line-height:1.8; margin:0;">
-            This app analyzes <strong style="color:#ffd500;">gold price data</strong> spanning nearly
+            This app analyzes <strong style="color:#ffc72c;">gold price data</strong> spanning nearly
             four decades (1986–2025) and builds machine learning models to predict future prices.
             It covers the relationship between gold and key global indicators: crude oil,
             the US dollar index, and the S&P 500.
@@ -690,28 +690,28 @@ elif page == "ℹ️  About":
 
     with c1:
         st.markdown("""
-        <div style="background:#003f88; border:1px solid #00509d; border-radius:12px; padding:20px; text-align:center;">
+        <div style="background:#1c1f23; border:1px solid #2e5f65; border-radius:12px; padding:20px; text-align:center;">
             <div style="font-size:2.5rem;">📅</div>
-            <div style="color:#ffd500; font-size:1.6rem; font-weight:800; margin:8px 0;">39 Years</div>
-            <div style="color:#a0c4ff; font-size:0.85rem;">of daily market data<br>1986 – 2025</div>
+            <div style="color:#ffc72c; font-size:1.6rem; font-weight:800; margin:8px 0;">39 Years</div>
+            <div style="color:#e0f7fa; opacity:0.7; font-size:0.85rem;">of daily market data<br>1986 – 2025</div>
         </div>
         """, unsafe_allow_html=True)
 
     with c2:
         st.markdown("""
-        <div style="background:#003f88; border:1px solid #00509d; border-radius:12px; padding:20px; text-align:center;">
+        <div style="background:#1c1f23; border:1px solid #2e5f65; border-radius:12px; padding:20px; text-align:center;">
             <div style="font-size:2.5rem;">📈</div>
-            <div style="color:#ffd500; font-size:1.6rem; font-weight:800; margin:8px 0;">9,933</div>
-            <div style="color:#a0c4ff; font-size:0.85rem;">trading days<br>in the dataset</div>
+            <div style="color:#ffc72c; font-size:1.6rem; font-weight:800; margin:8px 0;">9,933</div>
+            <div style="color:#e0f7fa; opacity:0.7; font-size:0.85rem;">trading days<br>in the dataset</div>
         </div>
         """, unsafe_allow_html=True)
 
     with c3:
         st.markdown("""
-        <div style="background:#003f88; border:1px solid #00509d; border-radius:12px; padding:20px; text-align:center;">
+        <div style="background:#1c1f23; border:1px solid #2e5f65; border-radius:12px; padding:20px; text-align:center;">
             <div style="font-size:2.5rem;">🤖</div>
-            <div style="color:#ffd500; font-size:1.6rem; font-weight:800; margin:8px 0;">3 Models</div>
-            <div style="color:#a0c4ff; font-size:0.85rem;">Random Forest · XGBoost<br>Linear Regression</div>
+            <div style="color:#ffc72c; font-size:1.6rem; font-weight:800; margin:8px 0;">3 Models</div>
+            <div style="color:#e0f7fa; opacity:0.7; font-size:0.85rem;">Random Forest · XGBoost<br>Linear Regression</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -723,21 +723,21 @@ elif page == "ℹ️  About":
     with col_l:
         st.markdown("### 📦 Dataset")
         st.markdown("""
-        <div style="background:#003f88; border:1px solid #00509d; border-radius:10px; padding:16px;">
+        <div style="background:#1c1f23; border:1px solid #2e5f65; border-radius:10px; padding:16px;">
         <table style="width:100%; color:#c0c0e0; font-size:0.88rem; border-collapse:collapse;">
-            <tr style="border-bottom:1px solid #00509d;">
-                <td style="padding:8px; color:#ffd500; font-weight:600;">Column</td>
-                <td style="padding:8px; color:#ffd500; font-weight:600;">Description</td>
+            <tr style="border-bottom:1px solid #2e5f65;">
+                <td style="padding:8px; color:#ffc72c; font-weight:600;">Column</td>
+                <td style="padding:8px; color:#ffc72c; font-weight:600;">Description</td>
             </tr>
-            <tr style="border-bottom:1px solid #003f88;">
+            <tr style="border-bottom:1px solid #1c1f23;">
                 <td style="padding:8px;">🥇 Price_Gold</td>
                 <td style="padding:8px;">Gold closing price (USD/oz)</td>
             </tr>
-            <tr style="border-bottom:1px solid #003f88;">
+            <tr style="border-bottom:1px solid #1c1f23;">
                 <td style="padding:8px;">🛢️ Price_Oil</td>
                 <td style="padding:8px;">Crude oil price (USD)</td>
             </tr>
-            <tr style="border-bottom:1px solid #003f88;">
+            <tr style="border-bottom:1px solid #1c1f23;">
                 <td style="padding:8px;">💵 Price_Dollar</td>
                 <td style="padding:8px;">US Dollar Index (DXY)</td>
             </tr>
@@ -762,12 +762,12 @@ elif page == "ℹ️  About":
         for icon, name, desc in tech:
             st.markdown(f"""
             <div style="display:flex; align-items:center; gap:12px;
-                        background:#003f88; border:1px solid #00509d;
+                        background:#1c1f23; border:1px solid #2e5f65;
                         border-radius:8px; padding:10px 14px; margin-bottom:6px;">
                 <span style="font-size:1.3rem;">{icon}</span>
                 <div>
-                    <span style="color:#ffd500; font-weight:600;">{name}</span>
-                    <span style="color:#6090cc; font-size:0.82rem; margin-left:8px;">{desc}</span>
+                    <span style="color:#ffc72c; font-weight:600;">{name}</span>
+                    <span style="color:#2e5f65; font-size:0.82rem; margin-left:8px;">{desc}</span>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -775,15 +775,15 @@ elif page == "ℹ️  About":
     # Footer
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("""
-    <div style="text-align:center; padding:20px; border-top:1px solid #00509d; margin-top:16px;">
-        <span style="color:#6090cc; font-size:0.85rem;">
-            Built by &nbsp;<strong style="color:#ffd500;">Noor Alshorman</strong>
+    <div style="text-align:center; padding:20px; border-top:1px solid #2e5f65; margin-top:16px;">
+        <span style="color:#2e5f65; font-size:0.85rem;">
+            Built by &nbsp;<strong style="color:#ffc72c;">Noor Alshorman</strong>
             &nbsp;·&nbsp; Data from
             <a href="https://investing.com" target="_blank"
-               style="color:#ffd500; text-decoration:none;">Investing.com</a>
+               style="color:#ffc72c; text-decoration:none;">Investing.com</a>
             &nbsp;·&nbsp;
             <a href="https://github.com/2005noor27/gold-price-prediction" target="_blank"
-               style="color:#ffd500; text-decoration:none;">GitHub ↗</a>
+               style="color:#ffc72c; text-decoration:none;">GitHub ↗</a>
         </span>
     </div>
     """, unsafe_allow_html=True)
