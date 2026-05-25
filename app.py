@@ -21,11 +21,51 @@ st.set_page_config(
 # ─── Custom CSS ─────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-[data-testid="stMetricValue"] { font-size: 1.4rem; color: #FFD700; }
-[data-testid="stMetricLabel"] { font-size: 0.85rem; }
+/* Background */
+.stApp { background-color: #0a0a0f; }
+[data-testid="stSidebar"] { background-color: #0f0f1a; border-right: 1px solid #2a2a3d; }
+
+/* Headings */
+h1 { color: #FFD700 !important; letter-spacing: 1px; }
+h2, h3 { color: #e0b830 !important; }
+
+/* Metric cards */
+[data-testid="stMetric"] {
+    background: linear-gradient(135deg, #13131f, #1c1c2e);
+    border: 1px solid #2a2a4a;
+    border-radius: 12px;
+    padding: 16px 20px;
+}
+[data-testid="stMetricValue"] { font-size: 1.5rem; color: #FFD700 !important; font-weight: 700; }
+[data-testid="stMetricLabel"] { font-size: 0.82rem; color: #aaaacc; }
+[data-testid="stMetricDelta"] { font-size: 0.85rem; }
+
+/* Buttons */
+.stButton > button {
+    background: linear-gradient(135deg, #b8860b, #FFD700);
+    color: #0a0a0f;
+    font-weight: 700;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    transition: all 0.2s ease;
+}
+.stButton > button:hover { opacity: 0.88; transform: translateY(-1px); }
+
+/* Selectbox / Sliders */
+[data-testid="stSelectbox"] label,
+[data-testid="stSlider"] label,
+[data-testid="stMultiSelect"] label { color: #c8c8e8 !important; font-size: 0.9rem; }
+
+/* Divider */
+hr { border-color: #2a2a4a; }
+
+/* Expander */
+[data-testid="stExpander"] { border: 1px solid #2a2a4a; border-radius: 8px; }
+
+/* Sidebar text */
+.stRadio label { color: #e0e0f0 !important; }
 .block-container { padding-top: 1.5rem; }
-h1 { color: #FFD700; }
-h2, h3 { color: #f0c040; }
 </style>
 """, unsafe_allow_html=True)
 
