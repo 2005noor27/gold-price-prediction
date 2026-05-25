@@ -228,30 +228,72 @@ if page == "📊  Dashboard":
     st.markdown("---")
 
     # ── Gold Price Chart ─────────────────────────────────────────────────────────
-    st.subheader("📈 Gold Price Over Time")
+    chart_col, ctrl_col = st.columns([4, 1])
+    with chart_col:
+        st.subheader("📈 Gold Price Over Time")
+    with ctrl_col:
+        st.markdown("<div style='padding-top:28px'></div>", unsafe_allow_html=True)
+        chart_type = st.radio("Chart type", ["🕯️ Candlestick", "📈 Line"],
+                              horizontal=True, label_visibility="collapsed")
+
+    candle_df = filtered_df.dropna(subset=['Open_Gold','High_Gold','Low_Gold','Price_Gold'])
+
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=filtered_df['Date'], y=filtered_df['Price_Gold'],
-        mode='lines', name='Close',
-        line=dict(color='#ffd500', width=2),
-        fill='tozeroy', fillcolor='rgba(253,197,0,0.12)'
-    ))
-    fig.add_trace(go.Scatter(
-        x=filtered_df['Date'], y=filtered_df['High_Gold'],
-        mode='lines', name='High',
-        line=dict(color='rgba(0,200,0,0.4)', width=1, dash='dot')
-    ))
-    fig.add_trace(go.Scatter(
-        x=filtered_df['Date'], y=filtered_df['Low_Gold'],
-        mode='lines', name='Low',
-        line=dict(color='rgba(255,80,80,0.4)', width=1, dash='dot'),
-        fill='tonexty', fillcolor='rgba(180,180,180,0.04)'
-    ))
+
+    if chart_type == "🕯️ Candlestick":
+        fig.add_trace(go.Candlestick(
+            x=candle_df['Date'],
+            open=candle_df['Open_Gold'],
+            high=candle_df['High_Gold'],
+            low=candle_df['Low_Gold'],
+            close=candle_df['Price_Gold'],
+            name='OHLC',
+            increasing=dict(line=dict(color='#ffd500', width=1),
+                            fillcolor='rgba(253,197,0,0.85)'),
+            decreasing=dict(line=dict(color='#ef4444', width=1),
+                            fillcolor='rgba(239,68,68,0.75)'),
+        ))
+        # Volume bars underneath
+        if 'Volume_Gold' in candle_df.columns:
+            vol = candle_df.dropna(subset=['Volume_Gold'])
+            colors_v = ['rgba(253,197,0,0.4)' if c >= o else 'rgba(239,68,68,0.35)'
+                        for c, o in zip(vol['Price_Gold'], vol['Open_Gold'])]
+            fig.add_trace(go.Bar(
+                x=vol['Date'], y=vol['Volume_Gold'],
+                name='Volume', marker_color=colors_v,
+                yaxis='y2', showlegend=False
+            ))
+        fig.update_layout(
+            yaxis2=dict(overlaying='y', side='right', showgrid=False,
+                        showticklabels=False, range=[0, candle_df['Volume_Gold'].max() * 5]
+                        if 'Volume_Gold' in candle_df.columns else {}),
+            xaxis_rangeslider_visible=False,
+        )
+    else:
+        fig.add_trace(go.Scatter(
+            x=filtered_df['Date'], y=filtered_df['Price_Gold'],
+            mode='lines', name='Close',
+            line=dict(color='#ffd500', width=2),
+            fill='tozeroy', fillcolor='rgba(253,197,0,0.12)'
+        ))
+        fig.add_trace(go.Scatter(
+            x=filtered_df['Date'], y=filtered_df['High_Gold'],
+            mode='lines', name='High',
+            line=dict(color='rgba(0,200,0,0.4)', width=1, dash='dot')
+        ))
+        fig.add_trace(go.Scatter(
+            x=filtered_df['Date'], y=filtered_df['Low_Gold'],
+            mode='lines', name='Low',
+            line=dict(color='rgba(255,80,80,0.4)', width=1, dash='dot'),
+            fill='tonexty', fillcolor='rgba(180,180,180,0.04)'
+        ))
+
     fig.update_layout(
-        height=440, template='plotly_dark', paper_bgcolor='#003f88', plot_bgcolor='#00296b',
+        height=480, template='plotly_dark', paper_bgcolor='#003f88', plot_bgcolor='#00296b',
         xaxis_title="Date", yaxis_title="Price (USD)",
         hovermode='x unified',
-        legend=dict(orientation='h', y=1.02, x=0)
+        legend=dict(orientation='h', y=1.02, x=0),
+        margin=dict(l=0, r=0, t=10, b=0)
     )
     st.plotly_chart(fig, width='stretch')
 
