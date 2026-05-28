@@ -538,20 +538,32 @@ elif page == "Prediction":
             cols = ['Date', 'Price_Gold'] + extra_feats
             ml   = filtered_df[cols].dropna().sort_values('Date').reset_index(drop=True)
 
+            # ── تحويل للعوائد اليومية (stationary) ───────────────────────────
+            ml['Return_Gold'] = ml['Price_Gold'].pct_change() * 100   # % يومي
+
+            # Lag features على العوائد (ليس الأسعار)
             for lag in range(1, n_lags + 1):
-                ml[f'lag_{lag}'] = ml['Price_Gold'].shift(lag)
+                ml[f'lag_{lag}'] = ml['Return_Gold'].shift(lag)
+
+            # Extra features: نسبة تغيير الأصول الأخرى
+            for feat in extra_feats:
+                ml[f'{feat}_ret'] = ml[feat].pct_change() * 100
+
             ml = ml.dropna().reset_index(drop=True)
 
-            feature_cols = [f'lag_{i}' for i in range(1, n_lags + 1)] + extra_feats
+            ret_extra    = [f'{f}_ret' for f in extra_feats if f'{f}_ret' in ml.columns]
+            feature_cols = [f'lag_{i}' for i in range(1, n_lags + 1)] + ret_extra
             feature_cols = [c for c in feature_cols if c in ml.columns]
 
-            X     = ml[feature_cols].values
-            y     = ml['Price_Gold'].values
-            dates = ml['Date'].values
+            X      = ml[feature_cols].values
+            y_ret  = ml['Return_Gold'].values      # هدف: العائد اليومي %
+            prices = ml['Price_Gold'].values        # للعرض فقط
+            dates  = ml['Date'].values
 
-            split    = int(len(X) * (1 - test_pct / 100))
+            split      = int(len(X) * (1 - test_pct / 100))
             X_tr, X_te = X[:split], X[split:]
-            y_tr, y_te = y[:split], y[split:]
+            y_tr, y_te = y_ret[:split], y_ret[split:]
+            prices_te  = prices[split:]
             dates_te   = dates[split:]
 
             if model_name == "Random Forest":
@@ -568,31 +580,76 @@ elif page == "Prediction":
                     st.stop()
 
             mdl.fit(X_tr, y_tr)
-            preds = mdl.predict(X_te)
+            preds_ret = mdl.predict(X_te)          # توقع العائد اليومي %
 
-            rmse = np.sqrt(mean_squared_error(y_te, preds))
-            mae  = mean_absolute_error(y_te, preds)
-            r2   = r2_score(y_te, preds)
+            # ── تحويل العوائد المتوقعة → أسعار ──────────────────────────────
+            start_price  = prices_te[0]
+            preds_prices = [start_price]
+            for r in preds_ret[1:]:
+                preds_prices.append(preds_prices[-1] * (1 + r / 100))
+            preds_prices = np.array(preds_prices)
 
-            st.success(f"{model_name} trained successfully!")
+            # ── مقاييس على العوائد ───────────────────────────────────────────
+            rmse_ret = np.sqrt(mean_squared_error(y_te, preds_ret))
+            mae_ret  = mean_absolute_error(y_te, preds_ret)
+            r2_ret   = r2_score(y_te, preds_ret)
+
+            # مقاييس على الأسعار المُعادة
+            rmse_price = np.sqrt(mean_squared_error(prices_te, preds_prices))
+            mae_price  = mean_absolute_error(prices_te, preds_prices)
+
+            st.success(f"{model_name} trained on daily returns — results below.")
+
+            st.markdown("""
+            <div style="background:#1c1f23;border:1px solid #2e5f65;border-radius:8px;
+                        padding:10px 16px;margin-bottom:12px;font-size:0.82rem;color:#e0f7fa;opacity:0.8;">
+            The model predicts <b>daily % returns</b> (not raw prices) to avoid
+            price-level drift across years. Metrics are shown for both returns and
+            the reconstructed price path.
+            </div>
+            """, unsafe_allow_html=True)
+
             mc1, mc2, mc3 = st.columns(3)
-            mc1.metric("RMSE",     f"${rmse:,.2f}")
-            mc2.metric("MAE",      f"${mae:,.2f}")
-            mc3.metric("R2 Score", f"{r2:.4f}")
+            mc1.metric("R² (returns)",      f"{r2_ret:.4f}")
+            mc2.metric("RMSE (return %)",   f"{rmse_ret:.4f}%")
+            mc3.metric("RMSE (price $)",    f"${rmse_price:,.2f}")
 
+            mc4, mc5, _ = st.columns(3)
+            mc4.metric("MAE (return %)",    f"{mae_ret:.4f}%")
+            mc5.metric("MAE (price $)",     f"${mae_price:,.2f}")
+
+            # ── مخطط الأسعار الفعلية vs المُعادة ─────────────────────────────
             fig_pred = go.Figure()
-            fig_pred.add_trace(go.Scatter(x=dates_te, y=y_te, name='Actual',
+            fig_pred.add_trace(go.Scatter(x=dates_te, y=prices_te, name='Actual Price',
                                            line=dict(color='#e0f7fa', width=2)))
-            fig_pred.add_trace(go.Scatter(x=dates_te, y=preds,
+            fig_pred.add_trace(go.Scatter(x=dates_te, y=preds_prices,
                                            name=f'Predicted ({model_name})',
                                            line=dict(color='#ffc72c', width=2, dash='dash')))
             fig_pred.update_layout(height=420, template='plotly_dark',
                                    paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
-                                   title=f"{model_name}: Actual vs Predicted",
+                                   title=f"{model_name}: Reconstructed Price Path",
+                                   yaxis_title="Price (USD)",
                                    hovermode='x unified',
                                    legend=dict(orientation='h', y=1.02),
                                    margin=dict(l=0, r=0, t=40, b=0))
             st.plotly_chart(fig_pred, width='stretch')
+
+            # ── مخطط العوائد اليومية ──────────────────────────────────────────
+            with st.expander("Daily Returns: Actual vs Predicted"):
+                fig_ret = go.Figure()
+                fig_ret.add_trace(go.Scatter(x=dates_te, y=y_te, name='Actual Return',
+                                              line=dict(color='#e0f7fa', width=1.2)))
+                fig_ret.add_trace(go.Scatter(x=dates_te, y=preds_ret,
+                                              name='Predicted Return',
+                                              line=dict(color='#ffc72c', width=1.2, dash='dash')))
+                fig_ret.add_hline(y=0, line=dict(color='#4a5568', width=1, dash='dot'))
+                fig_ret.update_layout(height=280, template='plotly_dark',
+                                      paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+                                      yaxis_title="Daily Return (%)",
+                                      hovermode='x unified',
+                                      legend=dict(orientation='h', y=1.02),
+                                      margin=dict(l=0, r=0, t=10, b=0))
+                st.plotly_chart(fig_ret, width='stretch')
 
             if model_name in ["Random Forest", "XGBoost"]:
                 st.subheader("Feature Importance")
@@ -608,13 +665,13 @@ elif page == "Prediction":
                 st.plotly_chart(fig_fi, width='stretch')
 
             with st.expander("Residual Analysis"):
-                residuals = y_te - preds
+                residuals = y_te - preds_ret
                 fig_res   = px.histogram(residuals, nbins=60,
                                           color_discrete_sequence=['#2e5f65'],
-                                          labels={'value': 'Residual (USD)'})
+                                          labels={'value': 'Residual (% return)'})
                 fig_res.update_layout(height=250, template='plotly_dark',
                                       paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
-                                      xaxis_title="Residual (USD)", showlegend=False)
+                                      xaxis_title="Residual (% return)", showlegend=False)
                 st.plotly_chart(fig_res, width='stretch')
 
 
