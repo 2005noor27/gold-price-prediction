@@ -520,7 +520,7 @@ elif page == "Prediction":
     c1, c2, c3 = st.columns(3)
     with c1:
         model_name = st.selectbox("Model",
-                                   ["Random Forest", "Linear Regression", "XGBoost"])
+                                   ["Random Forest", "Linear Regression", "XGBoost", "Neural Network (MLP)"])
     with c2:
         test_pct = st.slider("Test Size %", 10, 40, 20)
     with c3:
@@ -570,6 +570,24 @@ elif page == "Prediction":
                 mdl = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
             elif model_name == "Linear Regression":
                 mdl = LinearRegression()
+            elif model_name == "Neural Network (MLP)":
+                from sklearn.neural_network import MLPRegressor
+                from sklearn.preprocessing import StandardScaler
+                scaler_X = StandardScaler()
+                scaler_y = StandardScaler()
+                X_tr_sc  = scaler_X.fit_transform(X_tr)
+                X_te_sc  = scaler_X.transform(X_te)
+                y_tr_sc  = scaler_y.fit_transform(y_tr.reshape(-1, 1)).ravel()
+                mdl = MLPRegressor(
+                    hidden_layer_sizes=(128, 64, 32),
+                    activation='relu', solver='adam',
+                    max_iter=500, random_state=42,
+                    early_stopping=True, validation_fraction=0.1,
+                    n_iter_no_change=20
+                )
+                mdl.fit(X_tr_sc, y_tr_sc)
+                preds_ret = scaler_y.inverse_transform(
+                    mdl.predict(X_te_sc).reshape(-1, 1)).ravel()
             else:
                 try:
                     from xgboost import XGBRegressor
@@ -579,8 +597,9 @@ elif page == "Prediction":
                     st.error("XGBoost not available. Choose another model.")
                     st.stop()
 
-            mdl.fit(X_tr, y_tr)
-            preds_ret = mdl.predict(X_te)          # توقع العائد اليومي %
+            if model_name != "Neural Network (MLP)":
+                mdl.fit(X_tr, y_tr)
+                preds_ret = mdl.predict(X_te)          # توقع العائد اليومي %
 
             # ── تحويل العوائد المتوقعة → أسعار ──────────────────────────────
             start_price  = prices_te[0]
@@ -651,7 +670,7 @@ elif page == "Prediction":
                                       margin=dict(l=0, r=0, t=10, b=0))
                 st.plotly_chart(fig_ret, width='stretch')
 
-            if model_name in ["Random Forest", "XGBoost"]:
+            if model_name in ["Random Forest", "XGBoost"] and hasattr(mdl, "feature_importances_"):
                 st.subheader("Feature Importance")
                 fi     = pd.Series(mdl.feature_importances_,
                                    index=feature_cols).sort_values(ascending=True)
