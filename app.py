@@ -685,7 +685,7 @@ elif page == "Prediction":
     c1, c2, c3 = st.columns(3)
     with c1:
         model_name = st.selectbox("Model",
-                                   ["Random Forest", "Linear Regression", "XGBoost", "Neural Network (MLP)"])
+                                   ["Random Forest", "XGBoost", "LightGBM", "Linear Regression", "Neural Network (MLP)"])
     with c2:
         test_pct = st.slider("Test Size %", 10, 40, 20)
     with c3:
@@ -712,6 +712,13 @@ elif page == "Prediction":
             for lag in range(1, n_lags + 1):
                 ml[f'lag_{lag}'] = ml['Return_Gold'].shift(lag)
 
+            # Rolling statistics on returns (time-series features)
+            for _w in [5, 10, 20]:
+                ml[f'rolling_mean_{_w}'] = ml['Return_Gold'].rolling(_w).mean()
+                ml[f'rolling_std_{_w}']  = ml['Return_Gold'].rolling(_w).std()
+            ml['momentum_5']  = ml['Price_Gold'].pct_change(5)  * 100
+            ml['momentum_10'] = ml['Price_Gold'].pct_change(10) * 100
+
             # Price assets -> returns; indicator features used directly
             price_feats = [f for f in extra_feats if f.startswith('Price_')]
             indic_feats = [f for f in extra_feats if not f.startswith('Price_')]
@@ -723,6 +730,10 @@ elif page == "Prediction":
             ret_extra    = [f'{f}_ret' for f in price_feats if f'{f}_ret' in ml.columns] + \
                            [f for f in indic_feats if f in ml.columns]
             feature_cols = [f'lag_{i}' for i in range(1, n_lags + 1)] + ret_extra
+            feature_cols += [c for c in [
+                'rolling_mean_5','rolling_std_5','rolling_mean_10',
+                'rolling_std_10','momentum_5','momentum_10'
+            ] if c in ml.columns]
             feature_cols = [c for c in feature_cols if c in ml.columns]
 
             X      = ml[feature_cols].values
@@ -758,6 +769,16 @@ elif page == "Prediction":
                 mdl.fit(X_tr_sc, y_tr_sc)
                 preds_ret = scaler_y.inverse_transform(
                     mdl.predict(X_te_sc).reshape(-1, 1)).ravel()
+            elif model_name == "LightGBM":
+                try:
+                    from lightgbm import LGBMRegressor
+                    mdl = LGBMRegressor(n_estimators=500, learning_rate=0.03,
+                                        num_leaves=63, min_child_samples=20,
+                                        subsample=0.8, colsample_bytree=0.8,
+                                        random_state=42, verbose=-1)
+                except ImportError:
+                    st.error("LightGBM not available. Choose another model.")
+                    st.stop()
             else:
                 try:
                     from xgboost import XGBRegressor
@@ -767,7 +788,7 @@ elif page == "Prediction":
                     st.error("XGBoost not available. Choose another model.")
                     st.stop()
 
-            if model_name != "Neural Network (MLP)":
+            if model_name not in ("Neural Network (MLP)",):
                 mdl.fit(X_tr, y_tr)
                 preds_ret = mdl.predict(X_te)          # توقع العائد اليومي %
 
@@ -936,7 +957,7 @@ elif page == "Forecast":
     fc1, fc2, fc3 = st.columns(3)
     with fc1:
         fc_model = st.selectbox("Model",
-                                 ["Random Forest", "XGBoost", "Linear Regression"],
+                                 ["Random Forest", "XGBoost", "LightGBM", "Prophet", "Linear Regression"],
                                  key="fc_model")
     with fc2:
         fc_lags = st.slider("Lag Features (days)", 5, 60, 20, key="fc_lags")
@@ -968,68 +989,127 @@ elif page == "Forecast":
 
             for lag in range(1, fc_lags + 1):
                 fc_df[f'lag_{lag}'] = fc_df['Return_Gold'].shift(lag)
+
+            # Rolling statistics & momentum (time-series features)
+            for _w in [5, 10, 20]:
+                fc_df[f'rolling_mean_{_w}'] = fc_df['Return_Gold'].rolling(_w).mean()
+                fc_df[f'rolling_std_{_w}']  = fc_df['Return_Gold'].rolling(_w).std()
+            fc_df['momentum_5']  = fc_df['Price_Gold'].pct_change(5)  * 100
+            fc_df['momentum_10'] = fc_df['Price_Gold'].pct_change(10) * 100
             fc_df = fc_df.dropna().reset_index(drop=True)
 
-            feature_cols = [f'lag_{i}' for i in range(1, fc_lags + 1)] + ret_extra_cols
+            ts_feat_cols = [c for c in [
+                'rolling_mean_5','rolling_std_5','rolling_mean_10',
+                'rolling_std_10','momentum_5','momentum_10'
+            ] if c in fc_df.columns]
+            feature_cols = [f'lag_{i}' for i in range(1, fc_lags + 1)] + ret_extra_cols + ts_feat_cols
             feature_cols = [c for c in feature_cols if c in fc_df.columns]
 
             X_all      = fc_df[feature_cols].values
             y_all      = fc_df['Return_Gold'].values
             prices_arr = fc_df['Price_Gold'].values
 
-            if fc_model == "Random Forest":
-                mdl = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
-            elif fc_model == "XGBoost":
+            if fc_model == "Prophet":
                 try:
-                    from xgboost import XGBRegressor
-                    mdl = XGBRegressor(n_estimators=300, learning_rate=0.05,
-                                       max_depth=6, random_state=42, verbosity=0)
+                    from prophet import Prophet as _Prophet
+                    import warnings
+                    warnings.filterwarnings("ignore")
+                    _prop_df = pd.DataFrame({
+                        'ds': fc_df['Date'],
+                        'y':  np.log(fc_df['Price_Gold'])  # log for stability
+                    })
+                    _m = _Prophet(
+                        daily_seasonality=False,
+                        weekly_seasonality=True,
+                        yearly_seasonality=True,
+                        changepoint_prior_scale=0.15,
+                        seasonality_prior_scale=10,
+                    )
+                    _m.fit(_prop_df)
+                    _future   = _m.make_future_dataframe(periods=fc_days + 30, freq='D')
+                    _fcst     = _m.predict(_future)
+                    # keep only future business days
+                    _fcst_fut = _fcst[_fcst['ds'] > fc_df['Date'].iloc[-1]].copy()
+                    _fcst_fut = _fcst_fut[_fcst_fut['ds'].dt.weekday < 5].head(fc_days)
+                    forecast_dates  = list(_fcst_fut['ds'])
+                    forecast_prices = list(np.exp(_fcst_fut['yhat'].values))
+                    _lo = np.exp(_fcst_fut['yhat_lower'].values)
+                    _hi = np.exp(_fcst_fut['yhat_upper'].values)
+                    upper_band = _hi
+                    lower_band = _lo
+                    cv_rmse    = float(np.mean(_hi - _lo)) / 4
                 except ImportError:
-                    st.error("XGBoost not available. Choose another model.")
+                    st.error("Prophet not installed. Run: pip install prophet")
                     st.stop()
             else:
-                mdl = LinearRegression()
+                if fc_model == "Random Forest":
+                    mdl = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
+                elif fc_model == "XGBoost":
+                    try:
+                        from xgboost import XGBRegressor
+                        mdl = XGBRegressor(n_estimators=300, learning_rate=0.05,
+                                           max_depth=6, random_state=42, verbosity=0)
+                    except ImportError:
+                        st.error("XGBoost not available. Choose another model.")
+                        st.stop()
+                elif fc_model == "LightGBM":
+                    try:
+                        from lightgbm import LGBMRegressor
+                        mdl = LGBMRegressor(n_estimators=500, learning_rate=0.03,
+                                            num_leaves=63, min_child_samples=20,
+                                            subsample=0.8, colsample_bytree=0.8,
+                                            random_state=42, verbose=-1)
+                    except ImportError:
+                        st.error("LightGBM not available. Choose another model.")
+                        st.stop()
+                else:
+                    mdl = LinearRegression()
 
-            tscv      = TimeSeriesSplit(n_splits=5)
-            cv_errors = []
-            for tr_idx, te_idx in tscv.split(X_all):
-                mdl.fit(X_all[tr_idx], y_all[tr_idx])
-                preds_cv = mdl.predict(X_all[te_idx])
-                for local_i, global_i in enumerate(te_idx):
-                    if global_i > 0:
-                        p_pred = prices_arr[global_i-1] * (1 + preds_cv[local_i] / 100)
-                        cv_errors.append(abs(prices_arr[global_i] - p_pred))
-            cv_rmse = float(np.mean(cv_errors)) if cv_errors else 50.0
+            if fc_model != "Prophet":
+                tscv      = TimeSeriesSplit(n_splits=5)
+                cv_errors = []
+                for tr_idx, te_idx in tscv.split(X_all):
+                    mdl.fit(X_all[tr_idx], y_all[tr_idx])
+                    preds_cv = mdl.predict(X_all[te_idx])
+                    for local_i, global_i in enumerate(te_idx):
+                        if global_i > 0:
+                            p_pred = prices_arr[global_i-1] * (1 + preds_cv[local_i] / 100)
+                            cv_errors.append(abs(prices_arr[global_i] - p_pred))
+                cv_rmse = float(np.mean(cv_errors)) if cv_errors else 50.0
 
-            mdl.fit(X_all, y_all)
+                mdl.fit(X_all, y_all)
 
-            ret_hist   = list(fc_df['Return_Gold'].values)
-            price_hist = list(fc_df['Price_Gold'].values)
-            last_extra_rets = {f'{c}_ret': fc_df[f'{c}_ret'].iloc[-1]
-                               for c in fc_feats if f'{c}_ret' in fc_df.columns}
-            last_date  = fc_df['Date'].iloc[-1]
+                ret_hist   = list(fc_df['Return_Gold'].values)
+                price_hist = list(fc_df['Price_Gold'].values)
+                last_extra_rets = {f'{c}_ret': fc_df[f'{c}_ret'].iloc[-1]
+                                   for c in fc_feats if f'{c}_ret' in fc_df.columns}
+                last_date  = fc_df['Date'].iloc[-1]
 
-            forecast_dates, forecast_prices = [], []
-            for step in range(fc_days):
-                lags_row  = [ret_hist[-(i)] for i in range(1, fc_lags + 1)]
-                extra_row = [last_extra_rets.get(f'{c}_ret', 0) for c in fc_feats]
-                pred_ret  = float(mdl.predict(
-                    np.array(lags_row + extra_row).reshape(1, -1))[0])
-                pred_ret  = float(np.clip(pred_ret, -5.0, 5.0))
-                pred_price = price_hist[-1] * (1 + pred_ret / 100)
-                next_date  = last_date + pd.Timedelta(days=step + 1)
-                while next_date.weekday() >= 5:
-                    next_date += pd.Timedelta(days=1)
-                forecast_dates.append(next_date)
-                forecast_prices.append(pred_price)
-                ret_hist.append(pred_ret)
-                price_hist.append(pred_price)
-                last_date = next_date
+                forecast_dates, forecast_prices = [], []
+                for step in range(fc_days):
+                    lags_row  = [ret_hist[-(i)] for i in range(1, fc_lags + 1)]
+                    extra_row = [last_extra_rets.get(f'{c}_ret', 0) for c in fc_feats]
+                    _ts_vals  = [fc_df[c].iloc[-1] for c in ts_feat_cols if c in fc_df.columns]
+                    pred_ret  = float(mdl.predict(
+                        np.array(lags_row + extra_row + _ts_vals).reshape(1, -1))[0])
+                    pred_ret  = float(np.clip(pred_ret, -5.0, 5.0))
+                    pred_price = price_hist[-1] * (1 + pred_ret / 100)
+                    next_date  = last_date + pd.Timedelta(days=step + 1)
+                    while next_date.weekday() >= 5:
+                        next_date += pd.Timedelta(days=1)
+                    forecast_dates.append(next_date)
+                    forecast_prices.append(pred_price)
+                    ret_hist.append(pred_ret)
+                    price_hist.append(pred_price)
+                    last_date = next_date
 
             forecast_prices = np.array(forecast_prices)
-            horizon_factor  = np.array([1 + 0.05 * i for i in range(fc_days)])
-            upper_band      = forecast_prices + cv_rmse * horizon_factor
-            lower_band      = forecast_prices - cv_rmse * horizon_factor
+            if fc_model != "Prophet":
+                horizon_factor = np.array([1 + 0.05 * i for i in range(fc_days)])
+                upper_band     = forecast_prices + cv_rmse * horizon_factor
+                lower_band     = forecast_prices - cv_rmse * horizon_factor
+            upper_band = np.array(upper_band)
+            lower_band = np.array(lower_band)
 
             last_actual   = float(fc_df['Price_Gold'].iloc[-1])
             last_forecast = float(forecast_prices[-1])
