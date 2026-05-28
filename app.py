@@ -531,7 +531,149 @@ if page == "Dashboard":
                            xaxis_title="Daily Change (%)", showlegend=False)
         st.plotly_chart(fig6, width='stretch')
 
+
+    # ── Investment Simulator ──────────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("Investment Simulator")
+    st.markdown("See how much your investment would have grown over the selected period.")
+
+    sim_c1, sim_c2 = st.columns([1, 2])
+    with sim_c1:
+        invest_amount = st.number_input(
+            "Initial Investment (USD)",
+            min_value=100, max_value=10_000_000,
+            value=10_000, step=1_000,
+            key="sim_amount"
+        )
+        sim_assets = st.multiselect(
+            "Compare with",
+            ['Oil', 'S&P 500', 'Dollar Index'],
+            default=['S&P 500'],
+            key="sim_assets"
+        )
+
+    # Map assets
+    asset_col_map = {
+        'Gold':        'Price_Gold',
+        'Oil':         'Price_Oil',
+        'S&P 500':     'Price_Stocks',
+        'Dollar Index':'Price_Dollar',
+    }
+    selected_assets = ['Gold'] + sim_assets
+
+    # Build simulation dataframe over the selected date range
+    sim_cols = ['Date'] + [asset_col_map[a] for a in selected_assets if asset_col_map[a] in filtered_df.columns]
+    sim_df   = filtered_df[sim_cols].dropna().sort_values('Date').reset_index(drop=True)
+
+    with sim_c1:
+        if not sim_df.empty:
+            sim_start_price = sim_df.iloc[0]
+            sim_end_price   = sim_df.iloc[-1]
+            sim_days        = (sim_df['Date'].iloc[-1] - sim_df['Date'].iloc[0]).days
+            sim_years       = sim_days / 365.25
+
+            # Compute portfolio values
+            results = {}
+            for asset in selected_assets:
+                col = asset_col_map.get(asset)
+                if col and col in sim_df.columns:
+                    p0 = sim_df[col].iloc[0]
+                    p1 = sim_df[col].iloc[-1]
+                    if p0 > 0:
+                        final_val   = invest_amount * (p1 / p0)
+                        total_ret   = (p1 / p0 - 1) * 100
+                        cagr        = ((p1 / p0) ** (1 / sim_years) - 1) * 100 if sim_years > 0 else 0
+                        results[asset] = {
+                            'final_val': final_val,
+                            'total_ret': total_ret,
+                            'cagr':      cagr,
+                        }
+
+            # Metric cards for each asset
+            best_asset = max(results, key=lambda a: results[a]['final_val']) if results else None
+            for asset, res in results.items():
+                arrow = " (Best)" if asset == best_asset else ""
+                st.metric(
+                    f"{asset}{arrow}",
+                    f"${res['final_val']:,.0f}",
+                    f"{res['total_ret']:+.1f}%  |  CAGR {res['cagr']:+.1f}%"
+                )
+
+    with sim_c2:
+        if not sim_df.empty:
+            # Growth chart: normalize all assets to $invest_amount at start
+            fig_sim = go.Figure()
+            palette_sim = {
+                'Gold':         '#ffc72c',
+                'Oil':          '#2e5f65',
+                'S&P 500':      '#e0f7fa',
+                'Dollar Index': '#4a5568',
+            }
+
+            for asset in selected_assets:
+                col = asset_col_map.get(asset)
+                if col and col in sim_df.columns:
+                    p0     = sim_df[col].iloc[0]
+                    series = (sim_df[col] / p0) * invest_amount
+                    fig_sim.add_trace(go.Scatter(
+                        x=sim_df['Date'], y=series,
+                        mode='lines', name=asset,
+                        line=dict(color=palette_sim.get(asset, '#ffffff'), width=2),
+                        hovertemplate='%{x|%b %d, %Y}<br>$%{y:,.0f}<extra>' + asset + '</extra>'
+                    ))
+
+            # Reference line at initial investment
+            fig_sim.add_hline(
+                y=invest_amount,
+                line=dict(color='rgba(255,255,255,0.2)', width=1, dash='dot'),
+                annotation_text=f"Initial ${invest_amount:,.0f}",
+                annotation_position="bottom right",
+                annotation=dict(font_color='rgba(255,255,255,0.4)', font_size=10)
+            )
+
+            fig_sim.update_layout(
+                height=340, template='plotly_dark',
+                paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+                yaxis_title="Portfolio Value (USD)",
+                hovermode='x unified',
+                legend=dict(orientation='h', y=1.02, font=dict(size=11)),
+                margin=dict(l=0, r=0, t=10, b=0)
+            )
+            st.plotly_chart(fig_sim, width='stretch')
+
+            # Drawdown chart for Gold
+            gold_series = (sim_df['Price_Gold'] / sim_df['Price_Gold'].iloc[0]) * invest_amount
+            rolling_max = gold_series.cummax()
+            drawdown    = (gold_series - rolling_max) / rolling_max * 100
+            max_dd      = drawdown.min()
+
+            fig_dd = go.Figure()
+            fig_dd.add_trace(go.Scatter(
+                x=sim_df['Date'], y=drawdown,
+                fill='tozeroy', fillcolor='rgba(239,68,68,0.15)',
+                line=dict(color='#ef4444', width=1.2),
+                name='Gold Drawdown',
+                hovertemplate='%{x|%b %d, %Y}<br>%{y:.1f}%<extra></extra>'
+            ))
+            fig_dd.update_layout(
+                height=180, template='plotly_dark',
+                paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+                yaxis_title="Drawdown (%)",
+                yaxis=dict(ticksuffix='%'),
+                margin=dict(l=0, r=0, t=4, b=0),
+                showlegend=False,
+                annotations=[dict(
+                    x=0.01, y=0.05, xref='paper', yref='paper',
+                    text=f"Max Drawdown: {max_dd:.1f}%",
+                    showarrow=False, font=dict(color='#ef4444', size=11)
+                )]
+            )
+            st.plotly_chart(fig_dd, width='stretch')
+        else:
+            st.info("Not enough data in the selected range to simulate.")
+
     # Raw Data
+    st.markdown("---")
     with st.expander("View Raw Data"):
         st.dataframe(
             filtered_df[['Date', 'Price_Gold', 'High_Gold', 'Low_Gold',
@@ -539,7 +681,6 @@ if page == "Dashboard":
             .dropna().set_index('Date'),
             width='stretch'
         )
-
 
 # ==============================================================================
 # PREDICTION
