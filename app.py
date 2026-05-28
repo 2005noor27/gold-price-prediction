@@ -216,80 +216,78 @@ filtered_df = df[mask].copy()
 # HOME
 # ══════════════════════════════════════════════════════════════════════════════
 if page == "Home":
-    import base64, pathlib
-    _glb = pathlib.Path("gold_coins.glb")
-    if _glb.exists():
-        _b64 = base64.b64encode(_glb.read_bytes()).decode()
-        _src = f"data:model/gltf-binary;base64,{_b64}"
-    else:
-        _src = ""
+    import streamlit.components.v1 as components
 
-    _html = f"""
+    # GLB served via Streamlit static file serving
+    # File lives in ./static/gold_coins.glb
+    # Accessible at /app/static/gold_coins.glb on Streamlit Cloud
+    _glb_url = "./app/static/gold_coins.glb"
+
+    _html = """
     <!DOCTYPE html>
     <html>
     <head>
-    <meta charset='utf-8'>
-    <script type='module' src='https://unpkg.com/@google/model-viewer@3.3.0/dist/model-viewer.min.js'></script>
+    <meta charset="utf-8">
+    <script type="module"
+      src="https://unpkg.com/@google/model-viewer@3.3.0/dist/model-viewer.min.js">
+    </script>
     <style>
-      * {{ margin:0; padding:0; box-sizing:border-box; }}
-      body {{ background:#09090b; font-family: sans-serif; overflow:hidden; }}
-      .hero {{
-        display:flex; flex-direction:column; align-items:center; justify-content:center;
-        height:100vh; width:100%; position:relative;
-      }}
-      model-viewer {{
-        width:420px; height:420px;
-        background:transparent;
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { background:#09090b; font-family: sans-serif; overflow:hidden; }
+      .hero {
+        display:flex; flex-direction:column; align-items:center;
+        justify-content:center; height:100vh; width:100%;
+      }
+      model-viewer {
+        width:420px; height:420px; background:transparent;
         --progress-bar-color: #ffc72c;
-      }}
-      .title {{
+      }
+      .title {
         font-size:2.8rem; font-weight:900; color:#ffc72c;
         letter-spacing:2px; text-align:center; margin-top:8px;
         text-shadow: 0 0 40px rgba(255,199,44,0.4);
-      }}
-      .subtitle {{
+      }
+      .subtitle {
         font-size:1rem; color:#e0f7fa; opacity:0.6; margin-top:10px;
         letter-spacing:3px; text-align:center; text-transform:uppercase;
-      }}
-      .badge {{
+      }
+      .badge {
         display:inline-block; margin-top:22px;
-        background:rgba(255,199,44,0.12); border:1px solid rgba(255,199,44,0.35);
+        background:rgba(255,199,44,0.12);
+        border:1px solid rgba(255,199,44,0.35);
         color:#ffc72c; padding:8px 24px; border-radius:999px;
         font-size:0.8rem; letter-spacing:2px; text-transform:uppercase;
-      }}
+      }
     </style>
     </head>
     <body>
-      <div class='hero'>
+      <div class="hero">
         <model-viewer
-          src='{_src}'
+          src="./app/static/gold_coins.glb"
           auto-rotate
-          auto-rotate-delay='0'
-          rotation-per-second='20deg'
+          auto-rotate-delay="0"
+          rotation-per-second="20deg"
           camera-controls
           disable-zoom
-          shadow-intensity='1.2'
-          exposure='1.1'
-          environment-image='neutral'
+          shadow-intensity="1.2"
+          exposure="1.1"
+          environment-image="neutral"
         ></model-viewer>
-        <div class='title'>Gold Price Prediction</div>
-        <div class='subtitle'>AI-Powered Market Analysis</div>
-        <div class='badge'>Data from Yahoo Finance &nbsp;·&nbsp; Updated Daily</div>
+        <div class="title">Gold Price Prediction</div>
+        <div class="subtitle">AI-Powered Market Analysis</div>
+        <div class="badge">Data from Yahoo Finance &nbsp;&middot;&nbsp; Updated Daily</div>
       </div>
     </body>
     </html>
     """
 
-    import streamlit.components.v1 as components
-    components.html(_html, height=620, scrolling=False)
+    components.html(_html, height=640, scrolling=False)
 
-    st.markdown("""
-    <div style='text-align:center; margin-top:8px; color:#e0f7fa; opacity:0.5; font-size:0.8rem;'>
-        Use the sidebar to navigate &nbsp;·&nbsp;
-        Drag to rotate the model &nbsp;·&nbsp;
-        Data updated daily
+    st.markdown('''
+    <div style="text-align:center;color:#e0f7fa;opacity:0.45;font-size:0.78rem;margin-top:4px;">
+        Drag to rotate &nbsp;&middot;&nbsp; Use the sidebar to navigate
     </div>
-    """, unsafe_allow_html=True)
+    ''', unsafe_allow_html=True)
 
 
 if page == "Dashboard":
