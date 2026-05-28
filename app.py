@@ -160,8 +160,13 @@ filtered_df = df[mask].copy()
 # ══════════════════════════════════════════════════════════════════════════════
 if page == "Dashboard":
 
-    st.markdown("<h1>Gold Price Dashboard</h1>", unsafe_allow_html=True)
-    st.markdown(f"**{start_date}** → **{end_date}** &nbsp;|&nbsp; {len(filtered_df):,} trading days")
+    # Hero image + title
+    hero_col, title_col = st.columns([1, 2])
+    with hero_col:
+        st.image("gold_hero.jpg", use_container_width=True)
+    with title_col:
+        st.markdown("<h1 style='margin-top:18px;'>Gold Price Dashboard</h1>", unsafe_allow_html=True)
+        st.markdown(f"**{start_date}** → **{end_date}** &nbsp;|&nbsp; {len(filtered_df):,} trading days")
 
     # KPI Cards
     gold_clean = filtered_df.dropna(subset=['Price_Gold'])
