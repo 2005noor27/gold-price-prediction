@@ -161,14 +161,14 @@ with st.sidebar:
     # Navigation
     page = st.radio(
         "nav",
-        ["Dashboard", "Prediction", "About"],
+        ["Dashboard", "Prediction", "Forecast", "About"],
         label_visibility="collapsed"
     )
 
     st.markdown("<hr style='border-color:#2e5f65; margin:12px 0;'>", unsafe_allow_html=True)
 
     # Date range (only show for Dashboard & Prediction)
-    if page != "About":
+    if page not in ("About", "Forecast"):
         st.markdown("**Date Range**")
         min_date = df['Date'].min().date()
         max_date = df['Date'].max().date()
@@ -723,6 +723,209 @@ elif page == "Prediction":
                     )
                     st.plotly_chart(fig_res, width='stretch')
 
+
+
+# ==============================================================================
+# FORECAST
+# ==============================================================================
+elif page == "Forecast":
+
+    st.markdown("<h1>30-Day Gold Price Forecast</h1>", unsafe_allow_html=True)
+    st.markdown("Recursive multi-step forecast trained on all available historical data.")
+
+    fc1, fc2, fc3 = st.columns(3)
+    with fc1:
+        fc_model = st.selectbox("Model", ["Random Forest", "XGBoost", "Linear Regression"], key="fc_model")
+    with fc2:
+        fc_lags = st.slider("Lag Features (days)", 5, 60, 20, key="fc_lags")
+    with fc3:
+        fc_days = st.slider("Forecast Horizon (days)", 7, 90, 30, key="fc_days")
+
+    fc_feats = st.multiselect(
+        "Additional Features (last known values carried forward)",
+        ['Price_Oil', 'Price_Dollar', 'Price_Stocks'],
+        default=[],
+        key="fc_feats"
+    )
+
+    run_fc = st.button("Generate Forecast", type="primary", width='stretch')
+
+    if run_fc:
+        with st.spinner("Training model and generating forecast..."):
+
+            from sklearn.model_selection import TimeSeriesSplit
+
+            # Build dataset from FULL history (not filtered)
+            use_cols = ['Date', 'Price_Gold'] + fc_feats
+            fc_df = df[use_cols].dropna().sort_values('Date').reset_index(drop=True)
+
+            for lag in range(1, fc_lags + 1):
+                fc_df[f'lag_{lag}'] = fc_df['Price_Gold'].shift(lag)
+            fc_df = fc_df.dropna().reset_index(drop=True)
+
+            feature_cols = [f'lag_{i}' for i in range(1, fc_lags + 1)] + fc_feats
+            feature_cols = [c for c in feature_cols if c in fc_df.columns]
+
+            X_all = fc_df[feature_cols].values
+            y_all = fc_df['Price_Gold'].values
+
+            # Pick model
+            if fc_model == "Random Forest":
+                from sklearn.ensemble import RandomForestRegressor
+                mdl = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
+            elif fc_model == "XGBoost":
+                try:
+                    from xgboost import XGBRegressor
+                    mdl = XGBRegressor(n_estimators=300, learning_rate=0.05,
+                                       max_depth=6, random_state=42, verbosity=0)
+                except ImportError:
+                    st.error("XGBoost not available. Choose another model.")
+                    st.stop()
+            else:
+                from sklearn.linear_model import LinearRegression
+                mdl = LinearRegression()
+
+            # Cross-val RMSE to estimate base uncertainty
+            tscv = TimeSeriesSplit(n_splits=5)
+            cv_errors = []
+            for tr_idx, te_idx in tscv.split(X_all):
+                mdl.fit(X_all[tr_idx], y_all[tr_idx])
+                cv_errors.extend(np.abs(y_all[te_idx] - mdl.predict(X_all[te_idx])))
+            cv_rmse = float(np.std(cv_errors))
+
+            # Final model trained on ALL data
+            mdl.fit(X_all, y_all)
+
+            # Recursive forecast
+            price_hist  = list(fc_df['Price_Gold'].values)
+            last_extras = {c: fc_df[c].iloc[-1] for c in fc_feats if c in fc_df.columns}
+            last_date   = fc_df['Date'].iloc[-1]
+
+            forecast_dates, forecast_prices = [], []
+            for step in range(fc_days):
+                lags_row  = [price_hist[-(i)] for i in range(1, fc_lags + 1)]
+                extra_row = [last_extras.get(c, 0) for c in fc_feats]
+                pred      = float(mdl.predict(np.array(lags_row + extra_row).reshape(1, -1))[0])
+                next_date = last_date + pd.Timedelta(days=step + 1)
+                while next_date.weekday() >= 5:
+                    next_date += pd.Timedelta(days=1)
+                forecast_dates.append(next_date)
+                forecast_prices.append(pred)
+                price_hist.append(pred)
+                last_date = next_date
+
+            forecast_prices = np.array(forecast_prices)
+            horizon_factor  = np.array([1 + 0.05 * i for i in range(fc_days)])
+            upper_band      = forecast_prices + cv_rmse * horizon_factor
+            lower_band      = forecast_prices - cv_rmse * horizon_factor
+
+            # Metrics
+            last_actual   = float(fc_df['Price_Gold'].iloc[-1])
+            last_forecast = float(forecast_prices[-1])
+            change_usd    = last_forecast - last_actual
+            change_pct    = (change_usd / last_actual) * 100
+
+            sm1, sm2, sm3, sm4 = st.columns(4)
+            sm1.metric("Last Actual Price",       f"${last_actual:,.2f}")
+            sm2.metric(f"Day {fc_days} Forecast", f"${last_forecast:,.2f}",
+                       f"{change_usd:+,.2f} ({change_pct:+.1f}%)")
+            sm3.metric("Forecast Peak",   f"${forecast_prices.max():,.2f}")
+            sm4.metric("Forecast Trough", f"${forecast_prices.min():,.2f}")
+
+            st.markdown("---")
+
+            # Chart: last 180 days history + forecast
+            hist = fc_df[['Date', 'Price_Gold']].tail(180)
+
+            fig_fc = go.Figure()
+
+            # Confidence band (shaded fill)
+            fig_fc.add_trace(go.Scatter(
+                x=list(forecast_dates) + list(forecast_dates[::-1]),
+                y=list(upper_band) + list(lower_band[::-1]),
+                fill='toself', fillcolor='rgba(255,199,44,0.10)',
+                line=dict(color='rgba(255,199,44,0)'),
+                hoverinfo='skip', showlegend=True, name='Confidence Band'
+            ))
+            # Band edges
+            fig_fc.add_trace(go.Scatter(
+                x=forecast_dates, y=upper_band,
+                line=dict(color='rgba(255,199,44,0.4)', width=1, dash='dot'),
+                name='Upper Bound', hovertemplate='$%{y:,.2f}'
+            ))
+            fig_fc.add_trace(go.Scatter(
+                x=forecast_dates, y=lower_band,
+                line=dict(color='rgba(255,199,44,0.4)', width=1, dash='dot'),
+                name='Lower Bound', hovertemplate='$%{y:,.2f}'
+            ))
+            # Historical line
+            fig_fc.add_trace(go.Scatter(
+                x=hist['Date'], y=hist['Price_Gold'],
+                line=dict(color='#e0f7fa', width=2), name='Historical Price'
+            ))
+            # Forecast line
+            fig_fc.add_trace(go.Scatter(
+                x=forecast_dates, y=forecast_prices,
+                line=dict(color='#ffc72c', width=2.5, dash='dash'),
+                name='Forecast',
+                hovertemplate='%{x|%b %d, %Y}<br>$%{y:,.2f}<extra></extra>'
+            ))
+            # Vertical divider
+            fig_fc.add_vline(
+                x=fc_df['Date'].iloc[-1],
+                line=dict(color='#2e5f65', width=1.5, dash='dot'),
+                annotation_text="Forecast Start",
+                annotation_position="top right",
+                annotation=dict(font_color='#2e5f65', font_size=11)
+            )
+            fig_fc.update_layout(
+                height=500, template='plotly_dark',
+                paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+                yaxis_title="Price (USD)", hovermode='x unified',
+                legend=dict(orientation='h', y=1.02, font=dict(size=10)),
+                margin=dict(l=0, r=0, t=20, b=0)
+            )
+            st.plotly_chart(fig_fc, width='stretch')
+
+            # Daily forecast table
+            st.subheader("Daily Forecast Table")
+            fc_table = pd.DataFrame({
+                'Date':            [d.strftime('%A, %b %d %Y') for d in forecast_dates],
+                'Forecast Price':  [f"${p:,.2f}" for p in forecast_prices],
+                'Upper Bound':     [f"${u:,.2f}" for u in upper_band],
+                'Lower Bound':     [f"${lo:,.2f}" for lo in lower_band],
+                'Change vs Today': [f"{((p - last_actual) / last_actual * 100):+.2f}%"
+                                    for p in forecast_prices],
+            })
+            fc_table.index = range(1, fc_days + 1)
+            fc_table.index.name = "Day"
+            st.dataframe(fc_table, width='stretch')
+
+            with st.expander("Model Details"):
+                rmse_str   = f"${cv_rmse:,.2f}"
+                train_rows = len(X_all)
+                st.markdown(f"""
+- **Model:** {fc_model}
+- **Training rows:** {train_rows:,}
+- **Lag features:** {fc_lags} days
+- **CV RMSE (base uncertainty):** {rmse_str}
+- **Method:** Recursive — each predicted day feeds into the next
+- **Confidence band:** grows by 5 % per step to reflect compounding uncertainty
+                """)
+
+    else:
+        st.info("Configure the settings above and click **Generate Forecast** to run the prediction.")
+        st.markdown("""
+        <div style="background:#1c1f23; border:1px solid #2e5f65; border-radius:12px; padding:20px; margin-top:12px;">
+            <h3 style="color:#ffc72c; margin-top:0;">How It Works</h3>
+            <ol style="color:#e0f7fa; line-height:2; padding-left:20px;">
+                <li>Train the model on <b>all available historical data</b> (no hold-out)</li>
+                <li>Use the last N actual prices as lag input features</li>
+                <li>Predict Day 1 — feed that prediction into Day 2, and so on</li>
+                <li>Confidence band widens over the horizon to reflect growing uncertainty</li>
+            </ol>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ==============================================================================
 # ABOUT
