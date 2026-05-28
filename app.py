@@ -147,6 +147,21 @@ def load_data():
 
     df['Year']  = df['Date'].dt.year
     df['Month'] = df['Date'].dt.month
+
+    # Derived indicator features (price-normalised, stationary)
+    p = df['Price_Gold']
+    df['EMA10_pct'] = (p.ewm(span=10, adjust=False).mean() / p - 1) * 100
+    df['EMA20_pct'] = (p.ewm(span=20, adjust=False).mean() / p - 1) * 100
+    ema12 = p.ewm(span=12, adjust=False).mean()
+    ema26 = p.ewm(span=26, adjust=False).mean()
+    df['MACD_pct']  = (ema12 - ema26) / p * 100
+    if all(c in df.columns for c in ['High_Gold', 'Low_Gold']):
+        hl  = df['High_Gold'] - df['Low_Gold']
+        hpc = (df['High_Gold'] - p.shift(1)).abs()
+        lpc = (df['Low_Gold']  - p.shift(1)).abs()
+        tr  = pd.concat([hl, hpc, lpc], axis=1).max(axis=1)
+        df['ATR_pct'] = tr.rolling(14).mean() / p * 100
+
     return df
 
 
@@ -569,9 +584,11 @@ elif page == "Prediction":
     with c3:
         n_lags = st.slider("Lag Features (days)", 1, 30, 5)
 
-    extra_feats = st.multiselect("Additional Features",
-                                  ['Price_Oil', 'Price_Dollar', 'Price_Stocks'],
-                                  default=['Price_Oil', 'Price_Dollar'])
+    _tech_opts  = [c for c in ['EMA10_pct','EMA20_pct','MACD_pct','ATR_pct'] if c in df.columns]
+    extra_feats = st.multiselect(
+        "Additional Features",
+        ['Price_Oil', 'Price_Dollar', 'Price_Stocks'] + _tech_opts,
+        default=['Price_Oil', 'Price_Dollar', 'MACD_pct', 'ATR_pct'])
 
     run = st.button("Train Model", type="primary", width='stretch')
 
@@ -588,13 +605,16 @@ elif page == "Prediction":
             for lag in range(1, n_lags + 1):
                 ml[f'lag_{lag}'] = ml['Return_Gold'].shift(lag)
 
-            # Extra features: نسبة تغيير الأصول الأخرى
-            for feat in extra_feats:
+            # Price assets -> returns; indicator features used directly
+            price_feats = [f for f in extra_feats if f.startswith('Price_')]
+            indic_feats = [f for f in extra_feats if not f.startswith('Price_')]
+            for feat in price_feats:
                 ml[f'{feat}_ret'] = ml[feat].pct_change() * 100
 
             ml = ml.dropna().reset_index(drop=True)
 
-            ret_extra    = [f'{f}_ret' for f in extra_feats if f'{f}_ret' in ml.columns]
+            ret_extra    = [f'{f}_ret' for f in price_feats if f'{f}_ret' in ml.columns] + \
+                           [f for f in indic_feats if f in ml.columns]
             feature_cols = [f'lag_{i}' for i in range(1, n_lags + 1)] + ret_extra
             feature_cols = [c for c in feature_cols if c in ml.columns]
 
@@ -687,6 +707,61 @@ elif page == "Prediction":
             mc6.metric("MAE (return %)",  f"{mae_ret:.4f}%")
 
             # ── مخطط الأسعار الفعلية vs المُعادة ─────────────────────────────
+
+            # Trading Signal + Strategy vs Buy & Hold
+            st.markdown('---')
+            sig_col, strat_col = st.columns([1, 2])
+            last_pred_ret = float(preds_ret[-1])
+            if last_pred_ret > 0.15:
+                sig_txt, sig_color = 'Buy', '#22c55e'
+                sig_desc = f'Model expects +{last_pred_ret:.2f}% next session'
+            elif last_pred_ret < -0.15:
+                sig_txt, sig_color = 'Sell / Avoid', '#ef4444'
+                sig_desc = f'Model expects {last_pred_ret:.2f}% next session'
+            else:
+                sig_txt, sig_color = 'Hold / Neutral', '#ffc72c'
+                sig_desc = f'Weak signal ({last_pred_ret:+.2f}%)'
+            with sig_col:
+                st.markdown(
+                    f'<div style="background:#1c1f23;border:1px solid #2e5f65;'
+                    f'border-radius:12px;padding:24px;text-align:center;">'
+                    f'<div style="font-size:.78rem;color:#e0f7fa;opacity:.6;margin-bottom:6px;">'
+                    f'Signal (end of test period)</div>'
+                    f'<div style="font-size:2.2rem;font-weight:900;color:{sig_color};">'
+                    f'{sig_txt}</div>'
+                    f'<div style="font-size:.78rem;color:#e0f7fa;opacity:.5;margin-top:6px;">'
+                    f'{sig_desc}</div></div>',
+                    unsafe_allow_html=True)
+            strat_rets = np.where(preds_ret[:-1] > 0, y_te[1:], 0.0)
+            bh_rets    = y_te[1:]
+            sharpe_s  = float(np.mean(strat_rets)/np.std(strat_rets)*np.sqrt(252)) \
+                        if np.std(strat_rets) > 1e-9 else 0.0
+            sharpe_bh = float(np.mean(bh_rets)/np.std(bh_rets)*np.sqrt(252)) \
+                        if np.std(bh_rets) > 1e-9 else 0.0
+            cum_s  = np.cumprod(1 + strat_rets / 100)
+            cum_bh = np.cumprod(1 + bh_rets    / 100)
+            with strat_col:
+                st.markdown('**Strategy vs Buy & Hold**')
+                sh1, sh2 = st.columns(2)
+                sh1.metric('Sharpe (Model Strategy)', f'{sharpe_s:.2f}',
+                           f'{sharpe_s - sharpe_bh:+.2f} vs B&H')
+                sh2.metric('Sharpe (Buy & Hold)', f'{sharpe_bh:.2f}')
+                _fig_s = go.Figure()
+                _fig_s.add_trace(go.Scatter(x=dates_te[1:], y=cum_bh,
+                                            name='Buy & Hold',
+                                            line=dict(color='#e0f7fa', width=1.5)))
+                _fig_s.add_trace(go.Scatter(x=dates_te[1:], y=cum_s,
+                                            name='Model Strategy',
+                                            line=dict(color='#ffc72c', width=2)))
+                _fig_s.update_layout(
+                    height=200, template='plotly_dark',
+                    paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+                    yaxis_title='Growth ($1)', hovermode='x unified',
+                    legend=dict(orientation='h', y=1.02, font=dict(size=10)),
+                    margin=dict(l=0, r=0, t=10, b=0))
+                st.plotly_chart(_fig_s, width='stretch')
+            st.markdown('---')
+
             fig_pred = go.Figure()
             fig_pred.add_trace(go.Scatter(x=dates_te, y=prices_te, name='Actual Price',
                                            line=dict(color='#e0f7fa', width=2)))
