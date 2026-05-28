@@ -1042,11 +1042,16 @@ elif page == "Forecast":
                                          line=dict(color='#ffc72c', width=2.5, dash='dash'),
                                          name='Forecast',
                                          hovertemplate='%{x|%b %d, %Y}<br>$%{y:,.2f}<extra></extra>'))
-            fig_fc.add_vline(x=str(fc_df['Date'].iloc[-1].date()),
-                              line=dict(color='#2e5f65', width=1.5, dash='dot'),
-                              annotation_text="Forecast Start",
-                              annotation_position="top right",
-                              annotation=dict(font_color='#2e5f65', font_size=11))
+            _vline_x = str(fc_df['Date'].iloc[-1].date())
+            fig_fc.add_shape(type="line",
+                              x0=_vline_x, x1=_vline_x, y0=0, y1=1,
+                              xref="x", yref="paper",
+                              line=dict(color='#2e5f65', width=1.5, dash='dot'))
+            fig_fc.add_annotation(x=_vline_x, y=0.98,
+                                   xref="x", yref="paper",
+                                   text="Forecast Start", showarrow=False,
+                                   font=dict(color='#2e5f65', size=11),
+                                   xanchor="left")
             fig_fc.update_layout(height=500, template='plotly_dark',
                                   paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
                                   yaxis_title="Price (USD)", hovermode='x unified',
