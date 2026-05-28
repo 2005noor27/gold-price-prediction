@@ -1042,7 +1042,7 @@ elif page == "Forecast":
                                          line=dict(color='#ffc72c', width=2.5, dash='dash'),
                                          name='Forecast',
                                          hovertemplate='%{x|%b %d, %Y}<br>$%{y:,.2f}<extra></extra>'))
-            fig_fc.add_vline(x=fc_df['Date'].iloc[-1],
+            fig_fc.add_vline(x=str(fc_df['Date'].iloc[-1].date()),
                               line=dict(color='#2e5f65', width=1.5, dash='dot'),
                               annotation_text="Forecast Start",
                               annotation_position="top right",
