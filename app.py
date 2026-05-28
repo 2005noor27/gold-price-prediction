@@ -107,6 +107,44 @@ def load_data():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
+    # ── Preprocessing ────────────────────────────────────────────────────────
+
+    # 1. Remove flat/bad rows: High == Low == Open == Close (no real trading data)
+    ohlc = ['Open_Gold', 'High_Gold', 'Low_Gold', 'Price_Gold']
+    if all(c in df.columns for c in ohlc):
+        flat_mask = (
+            (df['High_Gold'] == df['Low_Gold']) &
+            (df['High_Gold'] == df['Open_Gold']) &
+            (df['High_Gold'] == df['Price_Gold'])
+        )
+        df = df[~flat_mask].reset_index(drop=True)
+
+    # 2. Clip negative Oil prices (April 2020 anomaly — keep the event but clip)
+    if 'Price_Oil' in df.columns:
+        df['Price_Oil'] = df['Price_Oil'].clip(lower=0.1)
+
+    # 3. Forward-fill missing prices (carries last valid price forward)
+    price_cols = ['Price_Gold', 'High_Gold', 'Low_Gold', 'Open_Gold',
+                  'Price_Oil', 'Price_Dollar', 'Price_Stocks']
+    for col in price_cols:
+        if col in df.columns:
+            df[col] = df[col].ffill()
+
+    # 4. Clip extreme daily gold returns (beyond ±8%) — reduces outlier noise
+    #    The -11% in Jan 2026 is a real event but extremely rare; cap at 3σ level
+    ret = df['Price_Gold'].pct_change() * 100
+    clip_level = 8.0
+    extreme = ret.abs() > clip_level
+    if extreme.any():
+        # Adjust prices to respect the cap (work backwards from clipped returns)
+        for i in df.index[extreme]:
+            if i == 0:
+                continue
+            prev_price = df.loc[i - 1, 'Price_Gold']
+            actual_ret = ret.loc[i]
+            capped_ret = np.clip(actual_ret, -clip_level, clip_level) / 100
+            df.loc[i, 'Price_Gold'] = prev_price * (1 + capped_ret)
+
     df['Year']  = df['Date'].dt.year
     df['Month'] = df['Date'].dt.month
     return df
