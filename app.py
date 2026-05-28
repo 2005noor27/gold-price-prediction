@@ -644,41 +644,47 @@ elif page == "Prediction":
                 mdl.fit(X_tr, y_tr)
                 preds_ret = mdl.predict(X_te)          # توقع العائد اليومي %
 
-            # ── تحويل العوائد المتوقعة → أسعار ──────────────────────────────
-            start_price  = prices_te[0]
-            preds_prices = [start_price]
-            for r in preds_ret[1:]:
-                preds_prices.append(preds_prices[-1] * (1 + r / 100))
-            preds_prices = np.array(preds_prices)
+            # ── 1-step-ahead reconstruction ───────────────────────────────────
+            # Each day anchored to ACTUAL previous price — no error compounding
+            preds_prices = np.zeros(len(prices_te))
+            preds_prices[0] = prices_te[0]
+            for i in range(1, len(prices_te)):
+                preds_prices[i] = prices_te[i - 1] * (1 + preds_ret[i] / 100)
 
-            # ── مقاييس على العوائد ───────────────────────────────────────────
+            # ── Metrics ──────────────────────────────────────────────────────
             rmse_ret = np.sqrt(mean_squared_error(y_te, preds_ret))
             mae_ret  = mean_absolute_error(y_te, preds_ret)
             r2_ret   = r2_score(y_te, preds_ret)
 
-            # مقاييس على الأسعار المُعادة
-            rmse_price = np.sqrt(mean_squared_error(prices_te, preds_prices))
-            mae_price  = mean_absolute_error(prices_te, preds_prices)
+            rmse_price = np.sqrt(mean_squared_error(prices_te[1:], preds_prices[1:]))
+            mae_price  = mean_absolute_error(prices_te[1:], preds_prices[1:])
 
-            st.success(f"{model_name} trained on daily returns — results below.")
+            # Directional accuracy: % of days model correctly called up/down
+            actual_dir = np.sign(y_te[1:])
+            pred_dir   = np.sign(preds_ret[1:])
+            dir_acc    = float(np.mean(actual_dir == pred_dir) * 100)
+
+            st.success(f"{model_name} trained — results below.")
 
             st.markdown("""
             <div style="background:#1c1f23;border:1px solid #2e5f65;border-radius:8px;
                         padding:10px 16px;margin-bottom:12px;font-size:0.82rem;color:#e0f7fa;opacity:0.8;">
-            The model predicts <b>daily % returns</b> (not raw prices) to avoid
-            price-level drift across years. Metrics are shown for both returns and
-            the reconstructed price path.
+            <b>1-step-ahead:</b> each day the model receives <i>yesterday's actual price</i>
+            and predicts today. No error compounding.
+            <b>Directional accuracy</b> = % of days the model correctly predicted up or down.
             </div>
             """, unsafe_allow_html=True)
 
             mc1, mc2, mc3 = st.columns(3)
-            mc1.metric("R² (returns)",      f"{r2_ret:.4f}")
-            mc2.metric("RMSE (return %)",   f"{rmse_ret:.4f}%")
-            mc3.metric("RMSE (price $)",    f"${rmse_price:,.2f}")
+            dir_delta = "above random" if dir_acc >= 52 else ("at random" if dir_acc >= 48 else "below random")
+            mc1.metric("Directional Accuracy", f"{dir_acc:.1f}%", dir_delta)
+            mc2.metric("RMSE (price $)",       f"${rmse_price:,.2f}")
+            mc3.metric("MAE (price $)",        f"${mae_price:,.2f}")
 
-            mc4, mc5, _ = st.columns(3)
-            mc4.metric("MAE (return %)",    f"{mae_ret:.4f}%")
-            mc5.metric("MAE (price $)",     f"${mae_price:,.2f}")
+            mc4, mc5, mc6 = st.columns(3)
+            mc4.metric("R² (returns)",    f"{r2_ret:.4f}")
+            mc5.metric("RMSE (return %)", f"{rmse_ret:.4f}%")
+            mc6.metric("MAE (return %)",  f"{mae_ret:.4f}%")
 
             # ── مخطط الأسعار الفعلية vs المُعادة ─────────────────────────────
             fig_pred = go.Figure()
@@ -770,15 +776,24 @@ elif page == "Forecast":
             use_cols = ['Date', 'Price_Gold'] + fc_feats
             fc_df    = df[use_cols].dropna().sort_values('Date').reset_index(drop=True)
 
+            # Returns-based features (stationary)
+            fc_df['Return_Gold'] = fc_df['Price_Gold'].pct_change() * 100
+            ret_extra_cols = []
+            for c in fc_feats:
+                if c in fc_df.columns:
+                    fc_df[f'{c}_ret'] = fc_df[c].pct_change() * 100
+                    ret_extra_cols.append(f'{c}_ret')
+
             for lag in range(1, fc_lags + 1):
-                fc_df[f'lag_{lag}'] = fc_df['Price_Gold'].shift(lag)
+                fc_df[f'lag_{lag}'] = fc_df['Return_Gold'].shift(lag)
             fc_df = fc_df.dropna().reset_index(drop=True)
 
-            feature_cols = [f'lag_{i}' for i in range(1, fc_lags + 1)] + fc_feats
+            feature_cols = [f'lag_{i}' for i in range(1, fc_lags + 1)] + ret_extra_cols
             feature_cols = [c for c in feature_cols if c in fc_df.columns]
 
-            X_all = fc_df[feature_cols].values
-            y_all = fc_df['Price_Gold'].values
+            X_all      = fc_df[feature_cols].values
+            y_all      = fc_df['Return_Gold'].values
+            prices_arr = fc_df['Price_Gold'].values
 
             if fc_model == "Random Forest":
                 mdl = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
@@ -797,27 +812,36 @@ elif page == "Forecast":
             cv_errors = []
             for tr_idx, te_idx in tscv.split(X_all):
                 mdl.fit(X_all[tr_idx], y_all[tr_idx])
-                cv_errors.extend(np.abs(y_all[te_idx] - mdl.predict(X_all[te_idx])))
-            cv_rmse = float(np.std(cv_errors))
+                preds_cv = mdl.predict(X_all[te_idx])
+                for local_i, global_i in enumerate(te_idx):
+                    if global_i > 0:
+                        p_pred = prices_arr[global_i-1] * (1 + preds_cv[local_i] / 100)
+                        cv_errors.append(abs(prices_arr[global_i] - p_pred))
+            cv_rmse = float(np.mean(cv_errors)) if cv_errors else 50.0
 
             mdl.fit(X_all, y_all)
 
-            price_hist  = list(fc_df['Price_Gold'].values)
-            last_extras = {c: fc_df[c].iloc[-1] for c in fc_feats if c in fc_df.columns}
-            last_date   = fc_df['Date'].iloc[-1]
+            ret_hist   = list(fc_df['Return_Gold'].values)
+            price_hist = list(fc_df['Price_Gold'].values)
+            last_extra_rets = {f'{c}_ret': fc_df[f'{c}_ret'].iloc[-1]
+                               for c in fc_feats if f'{c}_ret' in fc_df.columns}
+            last_date  = fc_df['Date'].iloc[-1]
 
             forecast_dates, forecast_prices = [], []
             for step in range(fc_days):
-                lags_row  = [price_hist[-(i)] for i in range(1, fc_lags + 1)]
-                extra_row = [last_extras.get(c, 0) for c in fc_feats]
-                pred      = float(mdl.predict(
+                lags_row  = [ret_hist[-(i)] for i in range(1, fc_lags + 1)]
+                extra_row = [last_extra_rets.get(f'{c}_ret', 0) for c in fc_feats]
+                pred_ret  = float(mdl.predict(
                     np.array(lags_row + extra_row).reshape(1, -1))[0])
-                next_date = last_date + pd.Timedelta(days=step + 1)
+                pred_ret  = float(np.clip(pred_ret, -5.0, 5.0))
+                pred_price = price_hist[-1] * (1 + pred_ret / 100)
+                next_date  = last_date + pd.Timedelta(days=step + 1)
                 while next_date.weekday() >= 5:
                     next_date += pd.Timedelta(days=1)
                 forecast_dates.append(next_date)
-                forecast_prices.append(pred)
-                price_hist.append(pred)
+                forecast_prices.append(pred_price)
+                ret_hist.append(pred_ret)
+                price_hist.append(pred_price)
                 last_date = next_date
 
             forecast_prices = np.array(forecast_prices)
