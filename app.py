@@ -171,7 +171,35 @@ df = load_data()
 with st.sidebar:
     st.markdown("""
     <div style="text-align:center; padding:16px 0 8px 0;">
-        <div style="font-size:1.25rem; font-weight:800; color:#ffc72c; letter-spacing:1px; margin-top:6px;">Gold Price</div>
+        <svg viewBox="0 0 120 120" width="88" height="88" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:0 auto 6px auto;">
+          <defs>
+            <radialGradient id="cg" cx="38%" cy="35%" r="65%">
+              <stop offset="0%"   stop-color="#ffe566"/>
+              <stop offset="55%"  stop-color="#ffc72c"/>
+              <stop offset="100%" stop-color="#b8860b"/>
+            </radialGradient>
+            <radialGradient id="eg" cx="40%" cy="38%" r="60%">
+              <stop offset="0%"   stop-color="#ffd700"/>
+              <stop offset="100%" stop-color="#b8860b"/>
+            </radialGradient>
+          </defs>
+          <!-- outer ring / ridges -->
+          <circle cx="60" cy="60" r="58" fill="#b8860b"/>
+          <circle cx="60" cy="60" r="54" fill="url(#cg)"/>
+          <!-- inner rim -->
+          <circle cx="60" cy="60" r="50" fill="none" stroke="#e6a800" stroke-width="1.5" opacity="0.6"/>
+          <!-- coin face -->
+          <circle cx="60" cy="60" r="46" fill="url(#eg)"/>
+          <!-- $ sign shadow/depth -->
+          <text x="63" y="80" text-anchor="middle" font-family="Georgia,serif" font-size="54" font-weight="900"
+                fill="#b8860b" opacity="0.45">$</text>
+          <!-- $ sign -->
+          <text x="60" y="78" text-anchor="middle" font-family="Georgia,serif" font-size="54" font-weight="900"
+                fill="#ffc72c">$</text>
+          <!-- shine -->
+          <ellipse cx="44" cy="38" rx="12" ry="6" fill="white" opacity="0.18" transform="rotate(-30 44 38)"/>
+        </svg>
+        <div style="font-size:1.25rem; font-weight:800; color:#ffc72c; letter-spacing:1px;">Gold Price</div>
         <div style="font-size:0.78rem; color:#e0f7fa; opacity:0.7; margin-top:2px; letter-spacing:2px;">PREDICTION APP</div>
     </div>
     """, unsafe_allow_html=True)
