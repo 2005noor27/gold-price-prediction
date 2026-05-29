@@ -1244,8 +1244,14 @@ elif page == "Prediction":
                                         early_stopping=True, n_iter_no_change=20)
 
             # ── Walk-Forward Validation (TimeSeriesSplit) ─────────────────
+            # Ensure n_splits is valid for the dataset size
             n_splits  = min(5, int(len(X) * (1 - test_pct/100) / max(int(len(X)*test_pct/100/5), 1)))
-            n_splits  = max(3, min(n_splits, 5))
+            n_splits  = max(2, min(n_splits, 5))          # at least 2 folds
+            n_splits  = min(n_splits, len(X) // 10)       # never > len/10
+            n_splits  = max(2, n_splits)                  # safety floor
+            if len(X) < 50:
+                st.warning(f"Only {len(X)} samples after feature engineering — try a wider date range.")
+                st.stop()
             tscv      = TimeSeriesSplit(n_splits=n_splits)
 
             fold_metrics  = []   # per-fold results
@@ -1991,7 +1997,8 @@ elif page == "Forecast":
                     mdl = LinearRegression()
 
             if fc_model != "Prophet":
-                tscv      = TimeSeriesSplit(n_splits=5)
+                _fc_splits = min(5, max(2, len(X_all) // 10))
+                tscv       = TimeSeriesSplit(n_splits=_fc_splits)
                 cv_errors = []
                 for tr_idx, te_idx in tscv.split(X_all):
                     mdl.fit(X_all[tr_idx], y_all[tr_idx])
