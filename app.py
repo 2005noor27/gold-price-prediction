@@ -1498,97 +1498,155 @@ elif page == "Forecast":
                     last_date = next_date
 
             forecast_prices = np.array(forecast_prices)
-            if fc_model != "Prophet":
-                horizon_factor = np.array([1 + 0.05 * i for i in range(fc_days)])
-                upper_band     = forecast_prices + cv_rmse * horizon_factor
-                lower_band     = forecast_prices - cv_rmse * horizon_factor
-            upper_band = np.array(upper_band)
-            lower_band = np.array(lower_band)
 
-            last_actual   = float(fc_df['Price_Gold'].iloc[-1])
-            last_forecast = float(forecast_prices[-1])
+            # ── Monte Carlo Probabilistic Forecast (500 paths) ───────────
+            N_SIM = 500
+            if fc_model != "Prophet":
+                # Residuals from CV as empirical noise distribution
+                _resid_src = fc_df["Return_Gold"].diff().dropna().values
+                _resid_std = float(np.std(np.array(cv_errors) / (fc_df["Price_Gold"].mean() + 1e-9) * 100)) \
+                             if cv_errors else 0.5
+                rng = np.random.default_rng(42)
+                sim_paths = np.zeros((N_SIM, fc_days))
+                for _s in range(N_SIM):
+                    _ph = [float(fc_df["Price_Gold"].iloc[-1])]
+                    _rh = list(fc_df["Return_Gold"].values)
+                    for _step in range(fc_days):
+                        # predicted return + bootstrap residual noise
+                        _noise = rng.choice(_resid_src) if len(_resid_src) > 0 else \
+                                 rng.normal(0, _resid_std)
+                        _sim_ret = float(np.clip(
+                            rng.normal(forecast_prices[_step] / _ph[-1] * 100 - 100,
+                                       abs(_noise) * 0.5), -8, 8))
+                        _sim_p   = _ph[-1] * (1 + _sim_ret / 100)
+                        sim_paths[_s, _step] = _sim_p
+                        _ph.append(_sim_p)
+                p10 = np.percentile(sim_paths, 10, axis=0)
+                p25 = np.percentile(sim_paths, 25, axis=0)
+                p50 = np.percentile(sim_paths, 50, axis=0)
+                p75 = np.percentile(sim_paths, 75, axis=0)
+                p90 = np.percentile(sim_paths, 90, axis=0)
+            else:
+                p10, p25 = np.array(lower_band), np.array(lower_band)
+                p50 = forecast_prices
+                p75, p90 = np.array(upper_band), np.array(upper_band)
+                sim_paths = None
+
+            last_actual   = float(fc_df["Price_Gold"].iloc[-1])
+            last_forecast = float(p50[-1])
             change_usd    = last_forecast - last_actual
             change_pct    = (change_usd / last_actual) * 100
 
+            # ── KPI Cards ────────────────────────────────────────────────
             sm1, sm2, sm3, sm4 = st.columns(4)
-            sm1.metric("Last Actual Price",       f"${last_actual:,.2f}")
-            sm2.metric(f"Day {fc_days} Forecast", f"${last_forecast:,.2f}",
+            sm1.metric("Last Actual Price",        f"${last_actual:,.2f}")
+            sm2.metric(f"Day {fc_days} Median",    f"${last_forecast:,.2f}",
                        f"{change_usd:+,.2f} ({change_pct:+.1f}%)")
-            sm3.metric("Forecast Peak",   f"${forecast_prices.max():,.2f}")
-            sm4.metric("Forecast Trough", f"${forecast_prices.min():,.2f}")
+            sm3.metric(f"80% Range (Day {fc_days})",
+                       f"${p10[-1]:,.0f} – ${p90[-1]:,.0f}")
+            sm4.metric(f"50% Range (Day {fc_days})",
+                       f"${p25[-1]:,.0f} – ${p75[-1]:,.0f}")
+
+            # ── Probability summary card ─────────────────────────────────
+            _prob_up = 0.0
+            if sim_paths is not None:
+                _prob_up = float(np.mean(sim_paths[:, -1] > last_actual) * 100)
+            _dir_txt = "Bullish" if _prob_up >= 55 else ("Bearish" if _prob_up <= 45 else "Neutral")
+            _dir_col = "#22c55e" if _prob_up >= 55 else ("#ef4444" if _prob_up <= 45 else "#f2ca50")
+            _card_html = (
+                f'<div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:14px 20px;margin:8px 0;">'
+                f'<span style="font-size:0.75rem;color:#d6e4f7;opacity:.6;text-transform:uppercase;letter-spacing:.05em;">Probability Price Higher in {fc_days}d</span><br>'
+                f'<span style="font-size:2rem;font-weight:700;color:{_dir_col};">{_prob_up:.0f}%</span>&nbsp;'
+                f'<span style="color:{_dir_col};font-size:1rem;font-weight:600;">{_dir_txt}</span>'
+                f'<hr style="border-color:rgba(255,255,255,0.07);margin:8px 0;">'
+                f'<span style="font-size:0.82rem;color:#d6e4f7;opacity:.7;">Based on {N_SIM} Monte Carlo simulations &nbsp;·&nbsp; '
+                f'50% range: <b style="color:#f2ca50">${p25[-1]:,.0f}–${p75[-1]:,.0f}</b> &nbsp;·&nbsp; '
+                f'80% range: <b style="color:#d6e4f7">${p10[-1]:,.0f}–${p90[-1]:,.0f}</b></span>'
+                f'</div>'
+            )
+            st.markdown(_card_html, unsafe_allow_html=True)
 
             st.markdown("---")
 
-            hist   = fc_df[['Date', 'Price_Gold']].tail(180)
+            # ── Fan Chart ────────────────────────────────────────────────
+            hist   = fc_df[["Date", "Price_Gold"]].tail(180)
             fig_fc = go.Figure()
+
+            # 80% band (P10-P90)
             fig_fc.add_trace(go.Scatter(
                 x=list(forecast_dates) + list(forecast_dates[::-1]),
-                y=list(upper_band) + list(lower_band[::-1]),
-                fill='toself', fillcolor='rgba(255,199,44,0.10)',
-                line=dict(color='rgba(255,199,44,0)'),
-                hoverinfo='skip', showlegend=True, name='Confidence Band'))
-            fig_fc.add_trace(go.Scatter(x=forecast_dates, y=upper_band,
-                                         line=dict(color='rgba(255,199,44,0.4)',
-                                                   width=1, dash='dot'),
-                                         name='Upper Bound',
-                                         hovertemplate='$%{y:,.2f}'))
-            fig_fc.add_trace(go.Scatter(x=forecast_dates, y=lower_band,
-                                         line=dict(color='rgba(255,199,44,0.4)',
-                                                   width=1, dash='dot'),
-                                         name='Lower Bound',
-                                         hovertemplate='$%{y:,.2f}'))
-            fig_fc.add_trace(go.Scatter(x=hist['Date'], y=hist['Price_Gold'],
-                                         line=dict(color='#e0f7fa', width=2),
-                                         name='Historical Price'))
-            fig_fc.add_trace(go.Scatter(x=forecast_dates, y=forecast_prices,
-                                         line=dict(color='#f2ca50', width=2.5, dash='dash'),
-                                         name='Forecast',
-                                         hovertemplate='%{x|%b %d, %Y}<br>$%{y:,.2f}<extra></extra>'))
-            _vline_x = str(fc_df['Date'].iloc[-1].date())
+                y=list(p90) + list(p10[::-1]),
+                fill="toself", fillcolor="rgba(242,202,80,0.07)",
+                line=dict(color="rgba(0,0,0,0)"),
+                hoverinfo="skip", showlegend=True, name="80% Range"))
+            # 50% band (P25-P75)
+            fig_fc.add_trace(go.Scatter(
+                x=list(forecast_dates) + list(forecast_dates[::-1]),
+                y=list(p75) + list(p25[::-1]),
+                fill="toself", fillcolor="rgba(242,202,80,0.18)",
+                line=dict(color="rgba(0,0,0,0)"),
+                hoverinfo="skip", showlegend=True, name="50% Range"))
+            # Historical
+            fig_fc.add_trace(go.Scatter(
+                x=hist["Date"], y=hist["Price_Gold"],
+                line=dict(color="#d6e4f7", width=2), name="Historical"))
+            # Median forecast
+            fig_fc.add_trace(go.Scatter(
+                x=forecast_dates, y=p50,
+                line=dict(color="#f2ca50", width=2.5, dash="dash"),
+                name="Median Forecast",
+                hovertemplate="%{x|%b %d, %Y}<br>Median: $%{y:,.2f}<extra></extra>"))
+            # P10 / P90 lines
+            fig_fc.add_trace(go.Scatter(
+                x=forecast_dates, y=p10,
+                line=dict(color="rgba(239,68,68,0.5)", width=1, dash="dot"),
+                name="Bear (P10)", hovertemplate="$%{y:,.2f}"))
+            fig_fc.add_trace(go.Scatter(
+                x=forecast_dates, y=p90,
+                line=dict(color="rgba(34,197,94,0.5)", width=1, dash="dot"),
+                name="Bull (P90)", hovertemplate="$%{y:,.2f}"))
+            _vline_x = str(fc_df["Date"].iloc[-1].date())
             fig_fc.add_shape(type="line",
                               x0=_vline_x, x1=_vline_x, y0=0, y1=1,
                               xref="x", yref="paper",
-                              line=dict(color='#293644', width=1.5, dash='dot'))
-            fig_fc.add_annotation(x=_vline_x, y=0.98,
-                                   xref="x", yref="paper",
+                              line=dict(color="#293644", width=1.5, dash="dot"))
+            fig_fc.add_annotation(x=_vline_x, y=0.98, xref="x", yref="paper",
                                    text="Forecast Start", showarrow=False,
-                                   font=dict(color='#293644', size=11),
-                                   xanchor="left")
-            fig_fc.update_layout(height=500, template='plotly_dark',
-                                  paper_bgcolor='#0d1b2a', plot_bgcolor='#061422',
-                                  yaxis_title="Price (USD)", hovermode='x unified',
-                                  legend=dict(orientation='h', y=1.02, font=dict(size=10)),
-                                  margin=dict(l=0, r=0, t=20, b=0))
-            st.plotly_chart(fig_fc, width='stretch')
+                                   font=dict(color="#d6e4f7", size=11), xanchor="left")
+            fig_fc.update_layout(
+                height=520, template="plotly_dark",
+                paper_bgcolor="#0d1b2a", plot_bgcolor="#061422",
+                yaxis_title="Price (USD)", hovermode="x unified",
+                legend=dict(orientation="h", y=1.02, font=dict(size=10)),
+                margin=dict(l=0, r=0, t=20, b=0))
+            st.plotly_chart(fig_fc, width="stretch")
 
             st.subheader("Daily Forecast Table")
             fc_table = pd.DataFrame({
-                'Date':            [d.strftime('%A, %b %d %Y') for d in forecast_dates],
-                'Forecast Price':  [f"${p:,.2f}" for p in forecast_prices],
-                'Upper Bound':     [f"${u:,.2f}" for u in upper_band],
-                'Lower Bound':     [f"${lo:,.2f}" for lo in lower_band],
-                'Change vs Today': [f"{((p - last_actual) / last_actual * 100):+.2f}%"
-                                    for p in forecast_prices],
+                "Date":           [d.strftime("%a, %b %d %Y") for d in forecast_dates],
+                "Median ($)":     [f"${p:,.2f}" for p in p50],
+                "Bear P10 ($)":   [f"${p:,.2f}" for p in p10],
+                "Bull P90 ($)":   [f"${p:,.2f}" for p in p90],
+                "50% Range":      [f"${a:,.0f}–${b:,.0f}" for a,b in zip(p25,p75)],
+                "Δ vs Today":     [f"{((p-last_actual)/last_actual*100):+.2f}%" for p in p50],
             })
-            fc_table.index      = range(1, fc_days + 1)
+            fc_table.index = range(1, fc_days + 1)
             fc_table.index.name = "Day"
-            st.dataframe(fc_table, width='stretch')
+            st.dataframe(fc_table, width="stretch")
             st.download_button(
-                label="Download Forecast as CSV",
-                data=fc_table.to_csv().encode('utf-8'),
+                label="Download Probabilistic Forecast as CSV",
+                data=fc_table.to_csv().encode("utf-8"),
                 file_name=f"gold_forecast_{fc_days}days_{fc_model.replace(' ','_')}.csv",
-                mime="text/csv",
-                use_container_width=True)
+                mime="text/csv", use_container_width=True)
 
             with st.expander("Model Details"):
-                rmse_str = f"${cv_rmse:,.2f}"
                 st.markdown(f"""
 - **Model:** {fc_model}
 - **Training rows:** {len(X_all):,}
 - **Lag features:** {fc_lags} days
-- **CV RMSE (base uncertainty):** {rmse_str}
-- **Method:** Recursive — each predicted day feeds the next step
-- **Confidence band:** grows by 5% per step to reflect compounding uncertainty
+- **Simulations:** {N_SIM} Monte Carlo paths
+- **Method:** Recursive prediction + bootstrap residual noise per step
+- **P50:** median of all simulations · **P10/P90:** bear/bull scenarios
                 """)
     else:
         st.info("Configure the settings above and click **Generate Forecast** to run.")
