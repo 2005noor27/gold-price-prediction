@@ -576,6 +576,48 @@ if page == "Dashboard":
                            xaxis_title="Daily Change (%)", showlegend=False)
         st.plotly_chart(fig6, width='stretch')
 
+    # ── MACD Chart ────────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("MACD (Moving Average Convergence Divergence)")
+    macd_df = filtered_df[['Date', 'Price_Gold']].dropna().copy().reset_index(drop=True)
+    _p       = macd_df['Price_Gold']
+    _ema12   = _p.ewm(span=12, adjust=False).mean()
+    _ema26   = _p.ewm(span=26, adjust=False).mean()
+    macd_df['MACD']   = _ema12 - _ema26
+    macd_df['Signal'] = macd_df['MACD'].ewm(span=9, adjust=False).mean()
+    macd_df['Hist']   = macd_df['MACD'] - macd_df['Signal']
+    macd_df = macd_df.dropna()
+
+    _macd_latest = macd_df['MACD'].iloc[-1]
+    _sig_latest  = macd_df['Signal'].iloc[-1]
+    _cross_txt   = "Bullish crossover" if _macd_latest > _sig_latest else "Bearish crossover"
+    _cross_color = "#22c55e" if _macd_latest > _sig_latest else "#ef4444"
+    mq1, mq2, mq3 = st.columns(3)
+    mq1.metric("MACD Line",   f"{_macd_latest:.4f}")
+    mq2.metric("Signal Line", f"{_sig_latest:.4f}")
+    mq3.metric("Status", _cross_txt)
+
+    fig_macd = go.Figure()
+    _colors_hist = ['#22c55e' if v >= 0 else '#ef4444' for v in macd_df['Hist']]
+    fig_macd.add_trace(go.Bar(
+        x=macd_df['Date'], y=macd_df['Hist'],
+        name='Histogram', marker_color=_colors_hist,
+        opacity=0.7, showlegend=True))
+    fig_macd.add_trace(go.Scatter(
+        x=macd_df['Date'], y=macd_df['MACD'],
+        name='MACD', line=dict(color='#ffc72c', width=2)))
+    fig_macd.add_trace(go.Scatter(
+        x=macd_df['Date'], y=macd_df['Signal'],
+        name='Signal', line=dict(color='#e0f7fa', width=1.5, dash='dot')))
+    fig_macd.add_hline(y=0, line=dict(color='#4a5568', width=1, dash='dot'))
+    fig_macd.update_layout(
+        height=320, template='plotly_dark',
+        paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+        yaxis_title="MACD Value", hovermode='x unified',
+        legend=dict(orientation='h', y=1.02, font=dict(size=10)),
+        margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig_macd, width='stretch')
+
     # ── Investment Simulator ──────────────────────────────────────────────────
     st.markdown("---")
     st.subheader("Investment Simulator")
@@ -668,10 +710,15 @@ if page == "Dashboard":
 
     st.markdown("---")
     with st.expander("View Raw Data"):
-        st.dataframe(
-            filtered_df[['Date', 'Price_Gold', 'High_Gold', 'Low_Gold',
-                         'Price_Oil', 'Price_Dollar', 'Price_Stocks']]
-            .dropna().set_index('Date'), width='stretch')
+        _raw = filtered_df[['Date', 'Price_Gold', 'High_Gold', 'Low_Gold',
+                            'Price_Oil', 'Price_Dollar', 'Price_Stocks']].dropna()
+        st.dataframe(_raw.set_index('Date'), width='stretch')
+        st.download_button(
+            label="Download as CSV",
+            data=_raw.to_csv(index=False).encode('utf-8'),
+            file_name=f"gold_data_{start_date}_{end_date}.csv",
+            mime="text/csv",
+            use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -835,6 +882,73 @@ elif page == "Prediction":
             mc6.metric("MAE (return %)",  f"{mae_ret:.4f}%")
 
             # ── مخطط الأسعار الفعلية vs المُعادة ─────────────────────────────
+
+            # ── Model Comparison ─────────────────────────────────────────
+            st.markdown('---')
+            with st.expander("Compare All Models", expanded=False):
+                _all_models = {
+                    "Random Forest":        lambda: RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1),
+                    "XGBoost":              None,
+                    "LightGBM":             None,
+                    "Linear Regression":    lambda: LinearRegression(),
+                }
+                _cmp_rows = []
+                _cmp_fig  = go.Figure()
+                _pal_cmp  = {"Random Forest":"#ffc72c","XGBoost":"#2e5f65",
+                             "LightGBM":"#22c55e","Linear Regression":"#e0f7fa"}
+                with st.spinner("Running all models for comparison..."):
+                    for _mn, _factory in _all_models.items():
+                        try:
+                            if _mn == "XGBoost":
+                                from xgboost import XGBRegressor
+                                _m = XGBRegressor(n_estimators=300, learning_rate=0.05,
+                                                  max_depth=6, random_state=42, verbosity=0)
+                            elif _mn == "LightGBM":
+                                from lightgbm import LGBMRegressor
+                                _m = LGBMRegressor(n_estimators=500, learning_rate=0.03,
+                                                   num_leaves=63, min_child_samples=20,
+                                                   subsample=0.8, colsample_bytree=0.8,
+                                                   random_state=42, verbose=-1)
+                            else:
+                                _m = _factory()
+                            _m.fit(X_tr, y_tr)
+                            _pr = _m.predict(X_te)
+                            _pp = np.zeros(len(prices_te))
+                            _pp[0] = prices_te[0]
+                            for _i in range(1, len(prices_te)):
+                                _pp[_i] = prices_te[_i-1] * (1 + _pr[_i] / 100)
+                            _da  = float(np.mean(np.sign(y_te[1:]) == np.sign(_pr[1:])) * 100)
+                            _rm  = float(np.sqrt(mean_squared_error(prices_te[1:], _pp[1:])))
+                            _ma  = float(mean_absolute_error(prices_te[1:], _pp[1:]))
+                            _r2  = float(r2_score(y_te, _pr))
+                            _cmp_rows.append({"Model": _mn,
+                                              "Dir. Acc %": f"{_da:.1f}",
+                                              "RMSE $": f"{_rm:,.2f}",
+                                              "MAE $": f"{_ma:,.2f}",
+                                              "R² (returns)": f"{_r2:.4f}"})
+                            _cum = np.cumprod(1 + np.where(_pr[:-1]>0, y_te[1:], 0.0) / 100)
+                            _cmp_fig.add_trace(go.Scatter(
+                                x=dates_te[1:], y=_cum, name=_mn,
+                                line=dict(color=_pal_cmp.get(_mn,"#ffffff"), width=1.8)))
+                        except Exception:
+                            pass
+                if _cmp_rows:
+                    _cmp_df = pd.DataFrame(_cmp_rows).set_index("Model")
+                    # highlight best values
+                    st.dataframe(_cmp_df, width='stretch')
+                    _cmp_fig.add_trace(go.Scatter(
+                        x=dates_te[1:],
+                        y=np.cumprod(1 + y_te[1:] / 100),
+                        name="Buy & Hold",
+                        line=dict(color='#4a5568', width=1.5, dash='dot')))
+                    _cmp_fig.update_layout(
+                        height=260, template='plotly_dark',
+                        paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
+                        yaxis_title="Growth ($1)", hovermode='x unified',
+                        title="All Models — Cumulative Strategy Return",
+                        legend=dict(orientation='h', y=1.08, font=dict(size=10)),
+                        margin=dict(l=0, r=0, t=30, b=0))
+                    st.plotly_chart(_cmp_fig, width='stretch')
 
             # Trading Signal + Strategy vs Buy & Hold
             st.markdown('---')
@@ -1179,6 +1293,12 @@ elif page == "Forecast":
             fc_table.index      = range(1, fc_days + 1)
             fc_table.index.name = "Day"
             st.dataframe(fc_table, width='stretch')
+            st.download_button(
+                label="Download Forecast as CSV",
+                data=fc_table.to_csv().encode('utf-8'),
+                file_name=f"gold_forecast_{fc_days}days_{fc_model.replace(' ','_')}.csv",
+                mime="text/csv",
+                use_container_width=True)
 
             with st.expander("Model Details"):
                 rmse_str = f"${cv_rmse:,.2f}"
@@ -1254,11 +1374,21 @@ elif page == "About":
     with col2:
         st.markdown("""
         <div style="background:#1c1f23; border:1px solid #2e5f65; border-radius:12px; padding:20px; margin-bottom:16px;">
-            <h3 style="color:#ffc72c; margin-top:0;">ML Models</h3>
+            <h3 style="color:#ffc72c; margin-top:0;">ML Models (Prediction)</h3>
             <ul style="color:#e0f7fa; line-height:2; margin:0; padding-left:20px;">
-                <li><b style="color:#ffc72c;">Random Forest</b> - ensemble of decision trees</li>
-                <li><b style="color:#ffc72c;">Linear Regression</b> - baseline linear model</li>
-                <li><b style="color:#ffc72c;">XGBoost</b> - gradient boosting</li>
+                <li><b style="color:#ffc72c;">Random Forest</b> — ensemble of decision trees</li>
+                <li><b style="color:#ffc72c;">XGBoost</b> — extreme gradient boosting</li>
+                <li><b style="color:#ffc72c;">LightGBM</b> — fast gradient boosting, less overfitting</li>
+                <li><b style="color:#ffc72c;">Neural Network (MLP)</b> — multi-layer perceptron</li>
+                <li><b style="color:#ffc72c;">Linear Regression</b> — baseline model</li>
+            </ul>
+        </div>
+        <div style="background:#1c1f23; border:1px solid #2e5f65; border-radius:12px; padding:20px;">
+            <h3 style="color:#ffc72c; margin-top:0;">ML Models (Forecast)</h3>
+            <ul style="color:#e0f7fa; line-height:2; margin:0; padding-left:20px;">
+                <li><b style="color:#ffc72c;">Prophet</b> — Meta's time-series model, handles trend &amp; seasonality</li>
+                <li><b style="color:#ffc72c;">LightGBM / XGBoost / RF</b> — recursive lag-feature forecast</li>
+                <li><b style="color:#ffc72c;">Linear Regression</b> — baseline</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -1268,7 +1398,7 @@ elif page == "About":
             <ul style="color:#e0f7fa; line-height:2; margin:0; padding-left:20px;">
                 <li>Python 3.11 + Streamlit</li>
                 <li>Plotly (interactive charts)</li>
-                <li>scikit-learn / XGBoost</li>
+                <li>scikit-learn / XGBoost / LightGBM / Prophet</li>
                 <li>pandas / numpy</li>
                 <li>GitHub Actions (auto daily update)</li>
             </ul>
