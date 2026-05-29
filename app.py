@@ -954,85 +954,127 @@ elif page == "Prediction":
             prices = ml['Price_Gold'].values        # للعرض فقط
             dates  = ml['Date'].values
 
-            split      = int(len(X) * (1 - test_pct / 100))
-            X_tr, X_te = X[:split], X[split:]
-            y_tr, y_te = y_ret[:split], y_ret[split:]
-            prices_te  = prices[split:]
-            dates_te   = dates[split:]
+            # ── Build model factory ───────────────────────────────────────
+            from sklearn.model_selection import TimeSeriesSplit
+            from sklearn.preprocessing import StandardScaler
 
-            if model_name == "Random Forest":
-                mdl = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
-            elif model_name == "Linear Regression":
-                mdl = LinearRegression()
-            elif model_name == "Neural Network (MLP)":
-                from sklearn.neural_network import MLPRegressor
-                from sklearn.preprocessing import StandardScaler
-                scaler_X = StandardScaler()
-                scaler_y = StandardScaler()
-                X_tr_sc  = scaler_X.fit_transform(X_tr)
-                X_te_sc  = scaler_X.transform(X_te)
-                y_tr_sc  = scaler_y.fit_transform(y_tr.reshape(-1, 1)).ravel()
-                mdl = MLPRegressor(
-                    hidden_layer_sizes=(128, 64, 32),
-                    activation='relu', solver='adam',
-                    max_iter=500, random_state=42,
-                    early_stopping=True, validation_fraction=0.1,
-                    n_iter_no_change=20
-                )
-                mdl.fit(X_tr_sc, y_tr_sc)
-                preds_ret = scaler_y.inverse_transform(
-                    mdl.predict(X_te_sc).reshape(-1, 1)).ravel()
-            elif model_name == "LightGBM":
-                try:
-                    from lightgbm import LGBMRegressor
-                    mdl = LGBMRegressor(n_estimators=500, learning_rate=0.03,
-                                        num_leaves=63, min_child_samples=20,
-                                        subsample=0.8, colsample_bytree=0.8,
-                                        random_state=42, verbose=-1)
-                except ImportError:
-                    st.error("LightGBM not available. Choose another model.")
-                    st.stop()
-            else:
-                try:
-                    from xgboost import XGBRegressor
-                    mdl = XGBRegressor(n_estimators=300, learning_rate=0.05,
-                                       max_depth=6, random_state=42, verbosity=0)
-                except ImportError:
-                    st.error("XGBoost not available. Choose another model.")
-                    st.stop()
+            def _make_model():
+                if model_name == "Random Forest":
+                    return RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
+                elif model_name == "Linear Regression":
+                    return LinearRegression()
+                elif model_name == "LightGBM":
+                    try:
+                        from lightgbm import LGBMRegressor
+                        return LGBMRegressor(n_estimators=500, learning_rate=0.03,
+                                             num_leaves=63, min_child_samples=20,
+                                             subsample=0.8, colsample_bytree=0.8,
+                                             random_state=42, verbose=-1)
+                    except ImportError:
+                        st.error("LightGBM not available."); st.stop()
+                elif model_name == "XGBoost":
+                    try:
+                        from xgboost import XGBRegressor
+                        return XGBRegressor(n_estimators=300, learning_rate=0.05,
+                                            max_depth=6, random_state=42, verbosity=0)
+                    except ImportError:
+                        st.error("XGBoost not available."); st.stop()
+                else:  # MLP
+                    from sklearn.neural_network import MLPRegressor
+                    return MLPRegressor(hidden_layer_sizes=(128, 64, 32),
+                                        activation="relu", solver="adam",
+                                        max_iter=500, random_state=42,
+                                        early_stopping=True, n_iter_no_change=20)
 
-            if model_name not in ("Neural Network (MLP)",):
-                mdl.fit(X_tr, y_tr)
-                preds_ret = mdl.predict(X_te)          # توقع العائد اليومي %
+            # ── Walk-Forward Validation (TimeSeriesSplit) ─────────────────
+            n_splits  = min(5, int(len(X) * (1 - test_pct/100) / max(int(len(X)*test_pct/100/5), 1)))
+            n_splits  = max(3, min(n_splits, 5))
+            tscv      = TimeSeriesSplit(n_splits=n_splits)
 
-            # ── 1-step-ahead reconstruction ───────────────────────────────────
-            # Each day anchored to ACTUAL previous price — no error compounding
-            preds_prices = np.zeros(len(prices_te))
-            preds_prices[0] = prices_te[0]
-            for i in range(1, len(prices_te)):
-                preds_prices[i] = prices_te[i - 1] * (1 + preds_ret[i] / 100)
+            fold_metrics  = []   # per-fold results
+            all_dates_te  = []
+            all_prices_te = []
+            all_preds_ret = []
+            all_preds_pr  = []
+            all_y_te      = []
+
+            for fold_i, (tr_idx, te_idx) in enumerate(tscv.split(X)):
+                X_tr, X_te = X[tr_idx], X[te_idx]
+                y_tr, y_te_f = y_ret[tr_idx], y_ret[te_idx]
+                p_te   = prices[te_idx]
+                d_te   = dates[te_idx]
+
+                _mdl = _make_model()
+                if model_name == "Neural Network (MLP)":
+                    _sx = StandardScaler(); _sy = StandardScaler()
+                    _mdl.fit(_sx.fit_transform(X_tr),
+                             _sy.fit_transform(y_tr.reshape(-1,1)).ravel())
+                    _pr = _sy.inverse_transform(
+                        _mdl.predict(_sx.transform(X_te)).reshape(-1,1)).ravel()
+                else:
+                    _mdl.fit(X_tr, y_tr)
+                    _pr = _mdl.predict(X_te)
+
+                # 1-step-ahead price reconstruction
+                _pp = np.zeros(len(p_te))
+                _pp[0] = p_te[0]
+                for _i in range(1, len(p_te)):
+                    _pp[_i] = p_te[_i-1] * (1 + _pr[_i] / 100)
+
+                _da = float(np.mean(np.sign(y_te_f[1:]) == np.sign(_pr[1:])) * 100)
+                _rm = float(np.sqrt(mean_squared_error(p_te[1:], _pp[1:])))
+                _ma = float(mean_absolute_error(p_te[1:], _pp[1:]))
+                _r2 = float(r2_score(y_te_f, _pr))
+                fold_metrics.append({"Fold": fold_i+1, "Dir Acc %": round(_da,1),
+                                     "RMSE $": round(_rm,2), "MAE $": round(_ma,2),
+                                     "R² (ret)": round(_r2,4),
+                                     "Test days": len(te_idx)})
+                all_dates_te.append(d_te)
+                all_prices_te.append(p_te)
+                all_preds_ret.append(_pr)
+                all_preds_pr.append(_pp)
+                all_y_te.append(y_te_f)
+
+            # Use last fold as primary result + keep last model for signal
+            mdl       = _mdl
+            prices_te = all_prices_te[-1]
+            dates_te  = all_dates_te[-1]
+            preds_ret = all_preds_ret[-1]
+            preds_prices = all_preds_pr[-1]
+            y_te      = all_y_te[-1]
+
+            # Aggregate metrics across all folds
+            avg_da  = float(np.mean([f["Dir Acc %"] for f in fold_metrics]))
+            avg_rm  = float(np.mean([f["RMSE $"]    for f in fold_metrics]))
+            avg_ma  = float(np.mean([f["MAE $"]     for f in fold_metrics]))
+            avg_r2  = float(np.mean([f["R² (ret)"]  for f in fold_metrics]))
+            rmse_price = avg_rm
+            mae_price  = avg_ma
+
+            # Concatenated predictions for full-history chart
+            all_dates_cat  = np.concatenate(all_dates_te)
+            all_prices_cat = np.concatenate(all_prices_te)
+            all_preds_cat  = np.concatenate(all_preds_pr)
+            all_y_cat      = np.concatenate(all_y_te)
+            all_predr_cat  = np.concatenate(all_preds_ret)
 
             # ── Metrics ──────────────────────────────────────────────────────
-            rmse_ret = np.sqrt(mean_squared_error(y_te, preds_ret))
-            mae_ret  = mean_absolute_error(y_te, preds_ret)
-            r2_ret   = r2_score(y_te, preds_ret)
+            # ── Walk-Forward aggregated metrics ────────────────────────────
+            rmse_ret   = float(np.sqrt(mean_squared_error(all_y_cat, all_predr_cat)))
+            mae_ret    = float(mean_absolute_error(all_y_cat, all_predr_cat))
+            r2_ret     = float(r2_score(all_y_cat, all_predr_cat))
+            rmse_price = avg_rm
+            mae_price  = avg_ma
+            dir_acc    = avg_da
 
-            rmse_price = np.sqrt(mean_squared_error(prices_te[1:], preds_prices[1:]))
-            mae_price  = mean_absolute_error(prices_te[1:], preds_prices[1:])
+            st.success(f"{model_name} trained — Walk-Forward Validation across {n_splits} folds.")
 
-            # Directional accuracy: % of days model correctly called up/down
-            actual_dir = np.sign(y_te[1:])
-            pred_dir   = np.sign(preds_ret[1:])
-            dir_acc    = float(np.mean(actual_dir == pred_dir) * 100)
-
-            st.success(f"{model_name} trained — results below.")
-
-            st.markdown("""
+            st.markdown(f"""
             <div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);border-radius:8px;
                         padding:10px 16px;margin-bottom:12px;font-size:0.82rem;color:#d6e4f7;opacity:0.8;">
-            <b>1-step-ahead:</b> each day the model receives <i>yesterday's actual price</i>
-            and predicts today. No error compounding.
-            <b>Directional accuracy</b> = % of days the model correctly predicted up or down.
+            <b>Walk-Forward Validation</b> — {n_splits} folds, always training on the past and testing on the future.
+            <b>1-step-ahead:</b> each day anchored to yesterday's actual price. No error compounding.
+            All metrics are averages across folds.
             </div>
             """, unsafe_allow_html=True)
 
@@ -1046,6 +1088,22 @@ elif page == "Prediction":
             mc4.metric("R² (returns)",    f"{r2_ret:.4f}")
             mc5.metric("RMSE (return %)", f"{rmse_ret:.4f}%")
             mc6.metric("MAE (return %)",  f"{mae_ret:.4f}%")
+
+            with st.expander(f"Walk-Forward Fold Breakdown ({n_splits} folds)"):
+                _fdf = pd.DataFrame(fold_metrics).set_index("Fold")
+                st.dataframe(_fdf, width="stretch")
+                _fold_fig = go.Figure()
+                _fold_fig.add_trace(go.Bar(x=_fdf.index, y=_fdf["Dir Acc %"],
+                                           marker_color=["#22c55e" if v>=52 else "#ef4444"
+                                                         for v in _fdf["Dir Acc %"]],
+                                           name="Dir Accuracy %"))
+                _fold_fig.add_hline(y=50, line=dict(color="#f2ca50", width=1, dash="dot"),
+                                    annotation_text="Random baseline 50%")
+                _fold_fig.update_layout(height=220, template="plotly_dark",
+                                        paper_bgcolor="#0d1b2a", plot_bgcolor="#061422",
+                                        xaxis_title="Fold", yaxis_title="Dir Accuracy %",
+                                        margin=dict(l=0,r=0,t=10,b=0), showlegend=False)
+                st.plotly_chart(_fold_fig, width="stretch")
 
             # ── مخطط الأسعار الفعلية vs المُعادة ─────────────────────────────
 
@@ -1171,19 +1229,27 @@ elif page == "Prediction":
             st.markdown('---')
 
             fig_pred = go.Figure()
-            fig_pred.add_trace(go.Scatter(x=dates_te, y=prices_te, name='Actual Price',
-                                           line=dict(color='#e0f7fa', width=2)))
-            fig_pred.add_trace(go.Scatter(x=dates_te, y=preds_prices,
-                                           name=f'Predicted ({model_name})',
-                                           line=dict(color='#f2ca50', width=2, dash='dash')))
-            fig_pred.update_layout(height=420, template='plotly_dark',
-                                   paper_bgcolor='#0d1b2a', plot_bgcolor='#061422',
-                                   title=f"{model_name}: Reconstructed Price Path",
+            fig_pred.add_trace(go.Scatter(x=all_dates_cat, y=all_prices_cat,
+                                           name="Actual Price",
+                                           line=dict(color="#d6e4f7", width=1.8)))
+            fig_pred.add_trace(go.Scatter(x=all_dates_cat, y=all_preds_cat,
+                                           name=f"Predicted ({model_name})",
+                                           line=dict(color="#f2ca50", width=1.8, dash="dash")))
+            # Mark fold boundaries
+            for _fd in all_dates_te[:-1]:
+                fig_pred.add_shape(type="line",
+                                   x0=str(pd.Timestamp(_fd[0]).date()),
+                                   x1=str(pd.Timestamp(_fd[0]).date()),
+                                   y0=0, y1=1, xref="x", yref="paper",
+                                   line=dict(color="rgba(242,202,80,0.2)", width=1, dash="dot"))
+            fig_pred.update_layout(height=440, template="plotly_dark",
+                                   paper_bgcolor="#0d1b2a", plot_bgcolor="#061422",
+                                   title=f"{model_name} — Walk-Forward ({n_splits} folds)",
                                    yaxis_title="Price (USD)",
-                                   hovermode='x unified',
-                                   legend=dict(orientation='h', y=1.02),
+                                   hovermode="x unified",
+                                   legend=dict(orientation="h", y=1.02),
                                    margin=dict(l=0, r=0, t=40, b=0))
-            st.plotly_chart(fig_pred, width='stretch')
+            st.plotly_chart(fig_pred, width="stretch")
 
             # ── مخطط العوائد اليومية ──────────────────────────────────────────
             with st.expander("Daily Returns: Actual vs Predicted"):
