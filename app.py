@@ -391,20 +391,10 @@ with st.sidebar:
     st.markdown("<hr style='border-color:rgba(242,202,80,0.1);margin:0 0 10px 0;'>", unsafe_allow_html=True)
 
     # ── Navigation ────────────────────────────────────────────────────────────
-    NAV_ITEMS = {
-        "Home":       ("🏠", "Welcome"),
-        "Dashboard":  ("📊", "Charts & Analysis"),
-        "Prediction": ("🤖", "Train ML Models"),
-        "Forecast":   ("🔮", "30-Day Outlook"),
-        "Simulator":  ("💰", "Investment Calc"),
-        "Portfolio":  ("📐", "Optimize Allocation"),
-        "Sentiment":  ("📰", "News Sentiment"),
-        "About":      ("ℹ️",  "App Info"),
-    }
     page = st.radio(
         "nav",
-        list(NAV_ITEMS.keys()),
-        format_func=lambda p: f"{NAV_ITEMS[p][0]}  {p}",
+        ["Home", "Dashboard", "Prediction", "Forecast",
+         "Simulator", "Portfolio", "Sentiment", "About"],
         label_visibility="collapsed")
 
     st.markdown("<hr style='border-color:rgba(242,202,80,0.1);margin:10px 0;'>", unsafe_allow_html=True)
