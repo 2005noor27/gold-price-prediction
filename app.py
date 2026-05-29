@@ -1201,59 +1201,159 @@ elif page == "Prediction":
                         margin=dict(l=0, r=0, t=30, b=0))
                     st.plotly_chart(_cmp_fig, width='stretch')
 
-            # Trading Signal + Strategy vs Buy & Hold
-            st.markdown('---')
-            sig_col, strat_col = st.columns([1, 2])
+            # ══════════════════════════════════════════════════════════════
+            # BACKTESTING ENGINE (Walk-Forward out-of-sample only)
+            # ══════════════════════════════════════════════════════════════
+            st.markdown("---")
+            st.subheader("Backtesting")
+            st.markdown(
+                '<div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);border-radius:8px;'
+                'padding:10px 16px;margin-bottom:14px;font-size:0.82rem;color:#d6e4f7;opacity:0.8;">'
+                '<b>Honest backtesting:</b> uses only Walk-Forward out-of-sample predictions — '
+                'the model never saw the test data during training.</div>',
+                unsafe_allow_html=True)
+
+            _bt_pred   = all_predr_cat
+            _bt_actual = all_y_cat
+            _bt_dates  = all_dates_cat
+
+            _position = (_bt_pred > 0.05).astype(float)
+            _strat_r  = _position * _bt_actual
+            _bh_r     = _bt_actual
+            _cum_s    = np.cumprod(1 + _strat_r  / 100)
+            _cum_bh   = np.cumprod(1 + _bh_r     / 100)
+
+            def _bt_metrics(rets, cum):
+                n       = max(len(rets), 1)
+                tot_ret = float((cum[-1] - 1) * 100)
+                ann_ret = float((cum[-1] ** (252/n) - 1) * 100)
+                peak    = np.maximum.accumulate(cum)
+                dd      = (cum - peak) / peak * 100
+                max_dd  = float(dd.min())
+                mu, sig = np.mean(rets), np.std(rets)
+                sharpe  = float(mu / sig * np.sqrt(252)) if sig > 1e-9 else 0.0
+                down    = np.std(rets[rets < 0]) if np.any(rets < 0) else 1e-9
+                sortino = float(mu / down * np.sqrt(252)) if down > 1e-9 else 0.0
+                calmar  = float(ann_ret / abs(max_dd)) if abs(max_dd) > 1e-9 else 0.0
+                return dict(tot=tot_ret, ann=ann_ret, dd=max_dd,
+                            sharpe=sharpe, sortino=sortino, calmar=calmar)
+
+            _ms = _bt_metrics(_strat_r, _cum_s)
+            _bh = _bt_metrics(_bh_r,    _cum_bh)
+
+            _trade_mask = _position > 0
+            _trade_rets = _bt_actual[_trade_mask]
+            _win_rate   = float(np.mean(_trade_rets > 0) * 100) if len(_trade_rets) > 0 else 0.0
+            _n_trades   = int(np.sum(np.diff(np.concatenate([[0], _trade_mask.astype(int)])) == 1))
+            _avg_win    = float(np.mean(_trade_rets[_trade_rets > 0])) if np.any(_trade_rets > 0) else 0.0
+            _avg_loss   = float(np.mean(_trade_rets[_trade_rets < 0])) if np.any(_trade_rets < 0) else 0.0
+            _coverage   = int(np.mean(_position) * 100)
+
+            def _mkpi(label, sv, bv, fmt, good_high=True):
+                delta = sv - bv
+                color = "#22c55e" if (delta > 0) == good_high else "#ef4444"
+                return (
+                    f'<div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);'
+
+                    f'border-top:2px solid #f2ca50;border-radius:12px;padding:14px 16px;">'
+
+                    f'<div style="font-size:.7rem;color:#d6e4f7;opacity:.6;text-transform:uppercase;'
+
+                    f'letter-spacing:.05em;">{label}</div>'
+
+                    f'<div style="font-family:monospace;font-size:1.35rem;font-weight:700;color:#f2ca50;">{fmt.format(sv)}</div>'
+
+                    f'<div style="font-size:.72rem;color:{color};">vs B&H {fmt.format(bv)}&nbsp;({delta:+.2f})</div>'
+
+                    f'</div>')
+
+            _c1,_c2,_c3,_c4,_c5,_c6 = st.columns(6)
+            for _col, _l, _s, _b, _f, _g in [
+                (_c1,"Total Return",   _ms["tot"],    _bh["tot"],    "{:.1f}%", True),
+                (_c2,"Annual Return",  _ms["ann"],    _bh["ann"],    "{:.1f}%", True),
+                (_c3,"Max Drawdown",   _ms["dd"],     _bh["dd"],     "{:.1f}%", False),
+                (_c4,"Sharpe Ratio",   _ms["sharpe"], _bh["sharpe"], "{:.2f}",  True),
+                (_c5,"Sortino Ratio",  _ms["sortino"],_bh["sortino"],"{:.2f}",  True),
+                (_c6,"Win Rate",       _win_rate,     50.0,          "{:.1f}%", True),
+            ]:
+                _col.markdown(_mkpi(_l,_s,_b,_f,_g), unsafe_allow_html=True)
+
+            st.markdown(
+                f'<div style="background:#0d1b2a;border:1px solid rgba(255,255,255,0.06);'
+
+                f'border-radius:8px;padding:8px 16px;margin:10px 0;font-size:0.8rem;color:#d6e4f7;opacity:.7;">'
+
+                f'Trades: <b style="color:#f2ca50">{_n_trades}</b> &nbsp;·&nbsp;'
+
+                f'Avg Win: <b style="color:#22c55e">+{_avg_win:.3f}%</b> &nbsp;·&nbsp;'
+
+                f'Avg Loss: <b style="color:#ef4444">{_avg_loss:.3f}%</b> &nbsp;·&nbsp;'
+
+                f'Calmar: <b style="color:#f2ca50">{_ms["calmar"]:.2f}</b> &nbsp;·&nbsp;'
+
+                f'Days in Market: <b>{_coverage}%</b></div>',
+                unsafe_allow_html=True)
+
+            st.markdown("---")
+
+            _eq_fig = go.Figure()
+            _eq_fig.add_trace(go.Scatter(x=_bt_dates, y=_cum_bh*1000,
+                name="Buy & Hold", line=dict(color="#d6e4f7", width=1.8)))
+            _eq_fig.add_trace(go.Scatter(x=_bt_dates, y=_cum_s*1000,
+                name=f"Model Strategy ({model_name})",
+                line=dict(color="#f2ca50", width=2.2)))
+            _eq_fig.update_layout(height=300, template="plotly_dark",
+                paper_bgcolor="#0d1b2a", plot_bgcolor="#061422",
+                title="Equity Curve — $1,000 initial investment",
+                yaxis_title="Portfolio Value ($)", hovermode="x unified",
+                legend=dict(orientation="h", y=1.02, font=dict(size=10)),
+                margin=dict(l=0, r=0, t=36, b=0))
+            st.plotly_chart(_eq_fig, width="stretch")
+
+            _peak_s  = np.maximum.accumulate(_cum_s)
+            _peak_bh = np.maximum.accumulate(_cum_bh)
+            _dd_s    = (_cum_s  - _peak_s)  / _peak_s  * 100
+            _dd_bh   = (_cum_bh - _peak_bh) / _peak_bh * 100
+            _dd_fig  = go.Figure()
+            _dd_fig.add_trace(go.Scatter(x=_bt_dates, y=_dd_bh,
+                fill="tozeroy", fillcolor="rgba(239,68,68,0.08)",
+                line=dict(color="rgba(239,68,68,0.4)", width=1), name="B&H Drawdown"))
+            _dd_fig.add_trace(go.Scatter(x=_bt_dates, y=_dd_s,
+                fill="tozeroy", fillcolor="rgba(242,202,80,0.08)",
+                line=dict(color="#f2ca50", width=1.5), name="Strategy Drawdown"))
+            _dd_fig.update_layout(height=200, template="plotly_dark",
+                paper_bgcolor="#0d1b2a", plot_bgcolor="#061422",
+                yaxis=dict(title="Drawdown (%)", ticksuffix="%"),
+                hovermode="x unified",
+                legend=dict(orientation="h", y=1.02, font=dict(size=10)),
+                margin=dict(l=0, r=0, t=10, b=0))
+            st.plotly_chart(_dd_fig, width="stretch")
+
+            st.markdown("---")
             last_pred_ret = float(preds_ret[-1])
             if last_pred_ret > 0.15:
-                sig_txt, sig_color = 'Buy', '#22c55e'
-                sig_desc = f'Model expects +{last_pred_ret:.2f}% next session'
+                sig_txt, sig_color = "Buy", "#22c55e"
+                sig_desc = f"Model expects +{last_pred_ret:.2f}% next session"
             elif last_pred_ret < -0.15:
-                sig_txt, sig_color = 'Sell / Avoid', '#ef4444'
-                sig_desc = f'Model expects {last_pred_ret:.2f}% next session'
+                sig_txt, sig_color = "Sell / Avoid", "#ef4444"
+                sig_desc = f"Model expects {last_pred_ret:.2f}% next session"
             else:
-                sig_txt, sig_color = 'Hold / Neutral', '#f2ca50'
-                sig_desc = f'Weak signal ({last_pred_ret:+.2f}%)'
-            with sig_col:
-                st.markdown(
-                    f'<div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);'
-                    f'border-radius:12px;padding:24px;text-align:center;">'
-                    f'<div style="font-size:.78rem;color:#d6e4f7;opacity:.6;margin-bottom:6px;">'
-                    f'Signal (end of test period)</div>'
-                    f'<div style="font-size:2.2rem;font-weight:900;color:{sig_color};">'
-                    f'{sig_txt}</div>'
-                    f'<div style="font-size:.78rem;color:#d6e4f7;opacity:.5;margin-top:6px;">'
-                    f'{sig_desc}</div></div>',
-                    unsafe_allow_html=True)
-            strat_rets = np.where(preds_ret[:-1] > 0, y_te[1:], 0.0)
-            bh_rets    = y_te[1:]
-            sharpe_s  = float(np.mean(strat_rets)/np.std(strat_rets)*np.sqrt(252)) \
-                        if np.std(strat_rets) > 1e-9 else 0.0
-            sharpe_bh = float(np.mean(bh_rets)/np.std(bh_rets)*np.sqrt(252)) \
-                        if np.std(bh_rets) > 1e-9 else 0.0
-            cum_s  = np.cumprod(1 + strat_rets / 100)
-            cum_bh = np.cumprod(1 + bh_rets    / 100)
-            with strat_col:
-                st.markdown('**Strategy vs Buy & Hold**')
-                sh1, sh2 = st.columns(2)
-                sh1.metric('Sharpe (Model Strategy)', f'{sharpe_s:.2f}',
-                           f'{sharpe_s - sharpe_bh:+.2f} vs B&H')
-                sh2.metric('Sharpe (Buy & Hold)', f'{sharpe_bh:.2f}')
-                _fig_s = go.Figure()
-                _fig_s.add_trace(go.Scatter(x=dates_te[1:], y=cum_bh,
-                                            name='Buy & Hold',
-                                            line=dict(color='#e0f7fa', width=1.5)))
-                _fig_s.add_trace(go.Scatter(x=dates_te[1:], y=cum_s,
-                                            name='Model Strategy',
-                                            line=dict(color='#f2ca50', width=2)))
-                _fig_s.update_layout(
-                    height=200, template='plotly_dark',
-                    paper_bgcolor='#0d1b2a', plot_bgcolor='#061422',
-                    yaxis_title='Growth ($1)', hovermode='x unified',
-                    legend=dict(orientation='h', y=1.02, font=dict(size=10)),
-                    margin=dict(l=0, r=0, t=10, b=0))
-                st.plotly_chart(_fig_s, width='stretch')
-            st.markdown('---')
+                sig_txt, sig_color = "Hold / Neutral", "#f2ca50"
+                sig_desc = f"Weak signal ({last_pred_ret:+.2f}%)"
+            st.markdown(
+                f'<div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);'
+
+                f'border-radius:12px;padding:20px;text-align:center;max-width:340px;margin:0 auto;">'
+
+                f'<div style="font-size:.75rem;color:#d6e4f7;opacity:.6;text-transform:uppercase;'
+
+                f'letter-spacing:.05em;margin-bottom:6px;">Signal — Next Session</div>'
+
+                f'<div style="font-size:2.2rem;font-weight:900;color:{sig_color};">{sig_txt}</div>'
+
+                f'<div style="font-size:.78rem;color:#d6e4f7;opacity:.5;margin-top:6px;">{sig_desc}</div></div>',
+                unsafe_allow_html=True)
+            st.markdown("---")
 
             fig_pred = go.Figure()
             fig_pred.add_trace(go.Scatter(x=all_dates_cat, y=all_prices_cat,
