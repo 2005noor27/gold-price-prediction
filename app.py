@@ -565,7 +565,7 @@ if page == "Dashboard":
         yearly = disp_df.groupby('Year')['Price_Gold'].mean().reset_index()
         fig4 = px.bar(yearly, x='Year', y='Price_Gold', color='Price_Gold',
                       color_continuous_scale=[[0, '#2e5f65'], [0.5, '#ffc72c'], [1, '#ffffff']],
-                      labels={'Price_Gold': f'Avg Price (USD/{_ulbl})'}),
+                      labels={'Price_Gold': f'Avg Price (USD/{_ulbl})'})
         fig4.update_layout(height=300, template='plotly_dark',
                            paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
                            showlegend=False, xaxis_title="")
