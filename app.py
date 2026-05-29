@@ -141,6 +141,16 @@ hr { border-color: rgba(242,202,80,0.12) !important; }
 """, unsafe_allow_html=True)
 
 
+def page_header(title, subtitle, icon=""):
+    """Consistent page header with title + subtitle."""
+    st.markdown(
+        f'<div style="margin-bottom:20px;">'
+        f'<div style="font-size:1.75rem;font-weight:800;color:#f2ca50;letter-spacing:-0.01em;">{icon} {title}</div>'
+        f'<div style="font-size:0.88rem;color:#d6e4f7;opacity:0.55;margin-top:3px;">{subtitle}</div>'
+        f'</div>',
+        unsafe_allow_html=True)
+
+
 @st.cache_data(ttl=3600)
 def load_economic_data():
     """Fetch VIX and 10Y Treasury Yield from yfinance — cached 1 hour."""
@@ -288,80 +298,132 @@ def load_data():
 df = load_data()
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
+# ── Add nav button CSS ────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+/* Hide default radio circles */
+div[data-testid="stRadio"] > div { gap: 4px; }
+div[data-testid="stRadio"] label {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; border-radius: 8px; cursor: pointer;
+    transition: background 0.15s; color: #d6e4f7 !important;
+    font-size: 0.88rem; font-weight: 500; border: 1px solid transparent;
+}
+div[data-testid="stRadio"] label:hover {
+    background: rgba(242,202,80,0.07);
+    border-color: rgba(242,202,80,0.15);
+}
+div[data-testid="stRadio"] label[data-checked="true"] {
+    background: rgba(242,202,80,0.12);
+    border-color: rgba(242,202,80,0.35);
+    color: #f2ca50 !important; font-weight: 600;
+}
+/* Hide radio circle */
+div[data-testid="stRadio"] [data-testid="stMarkdownContainer"] { display: none; }
+div[data-testid="stRadio"] input[type="radio"] { display: none; }
+/* Date inputs */
+[data-testid="stDateInput"] input {
+    background: #13212e !important; color: #d6e4f7 !important;
+    border: 1px solid rgba(255,255,255,0.08) !important; border-radius: 8px !important;
+    font-family: "JetBrains Mono", monospace !important; font-size: 0.82rem !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 with st.sidebar:
+    # ── Logo ─────────────────────────────────────────────────────────────────
     st.markdown("""
-    <div style="text-align:center; padding:16px 0 8px 0;">
-        <svg viewBox="0 0 120 120" width="88" height="88" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:0 auto 6px auto;">
+    <div style="text-align:center; padding:20px 0 12px 0;">
+        <svg viewBox="0 0 120 120" width="72" height="72" xmlns="http://www.w3.org/2000/svg"
+             style="display:block;margin:0 auto 10px auto;">
           <defs>
             <radialGradient id="cg" cx="38%" cy="35%" r="65%">
-              <stop offset="0%"   stop-color="#ffe566"/>
-              <stop offset="55%"  stop-color="#f2ca50"/>
+              <stop offset="0%" stop-color="#ffe566"/>
+              <stop offset="55%" stop-color="#f2ca50"/>
               <stop offset="100%" stop-color="#b8860b"/>
             </radialGradient>
             <radialGradient id="eg" cx="40%" cy="38%" r="60%">
-              <stop offset="0%"   stop-color="#ffd700"/>
+              <stop offset="0%" stop-color="#ffd700"/>
               <stop offset="100%" stop-color="#b8860b"/>
             </radialGradient>
           </defs>
-          <!-- outer ring / ridges -->
           <circle cx="60" cy="60" r="58" fill="#b8860b"/>
           <circle cx="60" cy="60" r="54" fill="url(#cg)"/>
-          <!-- inner rim -->
           <circle cx="60" cy="60" r="50" fill="none" stroke="#e6a800" stroke-width="1.5" opacity="0.6"/>
-          <!-- coin face -->
           <circle cx="60" cy="60" r="46" fill="url(#eg)"/>
-          <!-- $ sign shadow/depth -->
-          <text x="63" y="80" text-anchor="middle" font-family="Georgia,serif" font-size="54" font-weight="900"
-                fill="#b8860b" opacity="0.45">$</text>
-          <!-- $ sign -->
-          <text x="60" y="78" text-anchor="middle" font-family="Georgia,serif" font-size="54" font-weight="900"
-                fill="#f2ca50">$</text>
-          <!-- shine -->
+          <text x="63" y="80" text-anchor="middle" font-family="Georgia,serif" font-size="54"
+                font-weight="900" fill="#b8860b" opacity="0.45">$</text>
+          <text x="60" y="78" text-anchor="middle" font-family="Georgia,serif" font-size="54"
+                font-weight="900" fill="#f2ca50">$</text>
           <ellipse cx="44" cy="38" rx="12" ry="6" fill="white" opacity="0.18" transform="rotate(-30 44 38)"/>
         </svg>
-        <div style="font-size:1.25rem; font-weight:800; color:#f2ca50; letter-spacing:1px;">Gold Price</div>
-        <div style="font-size:0.78rem; color:#d6e4f7; opacity:0.7; margin-top:2px; letter-spacing:2px;">PREDICTION APP</div>
+        <div style="font-size:1.1rem;font-weight:800;color:#f2ca50;letter-spacing:1px;">AURUM</div>
+        <div style="font-size:0.68rem;color:#d6e4f7;opacity:0.5;letter-spacing:3px;margin-top:2px;">GOLD INTELLIGENCE</div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("<hr style='border-color:rgba(242,202,80,0.15); margin:8px 0 12px 0;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:rgba(242,202,80,0.1);margin:0 0 10px 0;'>", unsafe_allow_html=True)
 
-    page = st.radio("nav", ["Home", "Dashboard", "Prediction", "Forecast", "Simulator", "Sentiment", "About"],
-                    label_visibility="collapsed")
+    # ── Navigation ────────────────────────────────────────────────────────────
+    NAV_ITEMS = {
+        "Home":       ("🏠", "Welcome"),
+        "Dashboard":  ("📊", "Charts & Analysis"),
+        "Prediction": ("🤖", "Train ML Models"),
+        "Forecast":   ("🔮", "30-Day Outlook"),
+        "Simulator":  ("💰", "Investment Calc"),
+        "Sentiment":  ("📰", "News Sentiment"),
+        "About":      ("ℹ️",  "App Info"),
+    }
+    page = st.radio(
+        "nav",
+        list(NAV_ITEMS.keys()),
+        format_func=lambda p: f"{NAV_ITEMS[p][0]}  {p}",
+        label_visibility="collapsed")
 
-    st.markdown("<hr style='border-color:rgba(242,202,80,0.15); margin:12px 0;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:rgba(242,202,80,0.1);margin:10px 0;'>", unsafe_allow_html=True)
 
+    # ── Page-specific controls ────────────────────────────────────────────────
     if page == "Dashboard":
-        st.markdown("**Price Unit**")
+        st.markdown('<div style="font-size:.72rem;color:#d6e4f7;opacity:.5;text-transform:uppercase;letter-spacing:.08em;padding:0 2px 4px;">Price Unit</div>', unsafe_allow_html=True)
         unit = st.radio("unit", ["oz (Ounce)", "g (Gram)"],
                         horizontal=True, label_visibility="collapsed")
-        st.markdown("**Karat**")
+        st.markdown('<div style="font-size:.72rem;color:#d6e4f7;opacity:.5;text-transform:uppercase;letter-spacing:.08em;padding:6px 2px 4px;">Karat</div>', unsafe_allow_html=True)
         karat = st.selectbox("karat", ["24K (999 — Pure)", "22K (916)", "21K (875)", "18K (750)"],
                              label_visibility="collapsed")
-        st.markdown("<hr style='border-color:rgba(242,202,80,0.15); margin:8px 0 12px 0;'>",
-                    unsafe_allow_html=True)
+        st.markdown("<hr style='border-color:rgba(242,202,80,0.1);margin:10px 0;'>", unsafe_allow_html=True)
     else:
         unit  = "oz (Ounce)"
         karat = "24K (999 — Pure)"
 
     if page not in ("About", "Forecast", "Home", "Simulator", "Sentiment"):
-        st.markdown("**Date Range**")
-        min_date = df['Date'].min().date()
-        max_date = df['Date'].max().date()
+        st.markdown('<div style="font-size:.72rem;color:#d6e4f7;opacity:.5;text-transform:uppercase;letter-spacing:.08em;padding:0 2px 4px;">Date Range</div>', unsafe_allow_html=True)
+        min_date = df["Date"].min().date()
+        max_date = df["Date"].max().date()
         start_date = st.date_input("From", value=pd.to_datetime("2010-01-01").date(),
-                                   min_value=min_date, max_value=max_date)
-        end_date   = st.date_input("To",   value=max_date,
-                                   min_value=min_date, max_value=max_date)
-        st.markdown("<hr style='border-color:rgba(242,202,80,0.15); margin:12px 0;'>", unsafe_allow_html=True)
+                                   min_value=min_date, max_value=max_date,
+                                   help="Start of analysis period")
+        end_date   = st.date_input("To", value=max_date,
+                                   min_value=min_date, max_value=max_date,
+                                   help="End of analysis period")
+        st.markdown("<hr style='border-color:rgba(242,202,80,0.1);margin:10px 0;'>", unsafe_allow_html=True)
     else:
         start_date = pd.to_datetime("2010-01-01").date()
-        end_date   = df['Date'].max().date()
+        end_date   = df["Date"].max().date()
 
+    # ── Data freshness badge ──────────────────────────────────────────────────
+    _last_date  = df["Date"].max()
+    _days_ago   = (pd.Timestamp.today() - _last_date).days
+    _fresh_color = "#22c55e" if _days_ago <= 3 else "#f2ca50" if _days_ago <= 7 else "#ef4444"
+    _fresh_txt   = "Live" if _days_ago <= 3 else f"{_days_ago}d ago"
     st.markdown(f"""
-    <div style="font-size:0.78rem; color:rgba(242,202,80,0.5); line-height:2;">
-        &nbsp;Source: Yahoo Finance<br>
-        &nbsp;Period: 1986 – present<br>
-        &nbsp;{len(df):,} trading days
+    <div style="background:#13212e;border:1px solid rgba(255,255,255,0.06);border-radius:8px;
+                padding:8px 12px;font-size:0.75rem;color:#d6e4f7;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+            <span style="opacity:.5;text-transform:uppercase;letter-spacing:.05em;font-size:.65rem;">Data</span>
+            <span style="color:{_fresh_color};font-weight:600;">{_fresh_txt}</span>
+        </div>
+        <div style="opacity:.6;">{_last_date.strftime('%b %d, %Y')} &nbsp;·&nbsp; {len(df):,} days</div>
+        <div style="opacity:.4;font-size:.65rem;margin-top:2px;">Yahoo Finance · Auto-updated daily</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -472,8 +534,8 @@ if page == "Dashboard":
     with hero_col:
         st.image("gold_hero.jpg", use_container_width=True)
     with title_col:
-        st.markdown("<h1 style='margin-top:18px;'>Gold Price Dashboard</h1>", unsafe_allow_html=True)
-        st.markdown(f"**{start_date}** → **{end_date}** &nbsp;|&nbsp; {len(filtered_df):,} trading days")
+        page_header("Gold Price Dashboard",
+                    f"{start_date} → {end_date}  ·  {len(filtered_df):,} trading days")
 
     # KPI Cards
     gold_clean = disp_df.dropna(subset=['Price_Gold'])
@@ -787,8 +849,8 @@ if page == "Dashboard":
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "Simulator":
 
-    st.markdown("<h1>Investment Simulator</h1>", unsafe_allow_html=True)
-    st.markdown("See how much your investment would have grown over any historical period.")
+    page_header("Investment Simulator",
+                "Compare gold vs other assets over any historical period — with CAGR, drawdown & Sharpe ratio.")
 
     # Date range controls (inline since sidebar hides it for this page)
     sd1, sd2 = st.columns(2)
@@ -922,17 +984,20 @@ elif page == "Simulator":
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "Prediction":
 
-    st.markdown("<h1>Gold Price Prediction</h1>", unsafe_allow_html=True)
-    st.markdown("Train a machine learning model to predict gold prices from historical patterns.")
+    page_header("Gold Price Prediction",
+                "Train & evaluate ML models using Walk-Forward Validation — honest out-of-sample backtesting.")
 
     c1, c2, c3 = st.columns(3)
     with c1:
         model_name = st.selectbox("Model",
-                                   ["Random Forest", "XGBoost", "LightGBM", "Linear Regression", "Neural Network (MLP)"])
+                                   ["Random Forest", "XGBoost", "LightGBM", "Linear Regression", "Neural Network (MLP)"],
+                                   help="Choose the ML algorithm. LightGBM & XGBoost are generally best for financial time series.")
     with c2:
-        test_pct = st.slider("Test Size %", 10, 40, 20)
+        test_pct = st.slider("Test Size %", 10, 40, 20,
+                           help="What % of data to use for testing. Walk-Forward splits this into multiple folds.")
     with c3:
-        n_lags = st.slider("Lag Features (days)", 1, 30, 5)
+        n_lags = st.slider("Lag Features (days)", 1, 30, 5,
+                           help="How many past days of returns to use as input. More lags = more memory but more noise.")
 
     _tech_opts  = [c for c in ['EMA10_pct','EMA20_pct','MACD_pct','ATR_pct'] if c in df.columns]
     _eco_opts   = [c for c in ['VIX','TNX_Yield'] if c in df.columns]
@@ -1537,18 +1602,21 @@ elif page == "Prediction":
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "Forecast":
 
-    st.markdown("<h1>30-Day Gold Price Forecast</h1>", unsafe_allow_html=True)
-    st.markdown("Recursive multi-step forecast trained on all available historical data.")
+    page_header("30-Day Gold Price Forecast",
+                "Probabilistic forecast with Monte Carlo confidence bands (P10–P90) across 500 simulations.")
 
     fc1, fc2, fc3 = st.columns(3)
     with fc1:
         fc_model = st.selectbox("Model",
                                  ["Random Forest", "XGBoost", "LightGBM", "Prophet", "Linear Regression"],
-                                 key="fc_model")
+                                 key="fc_model",
+                                 help="Prophet is purpose-built for time series trends. Tree models use lag features recursively.")
     with fc2:
-        fc_lags = st.slider("Lag Features (days)", 5, 60, 20, key="fc_lags")
+        fc_lags = st.slider("Lag Features (days)", 5, 60, 20, key="fc_lags",
+                           help="Number of past days fed as input. Prophet ignores this — it uses the full time series.")
     with fc3:
-        fc_days = st.slider("Forecast Horizon (days)", 7, 90, 30, key="fc_days")
+        fc_days = st.slider("Forecast Horizon (days)", 7, 90, 30, key="fc_days",
+                           help="How many business days ahead to forecast. Uncertainty grows significantly beyond 14 days.")
 
     fc_feats = st.multiselect(
         "Additional Features (last known values carried forward)",
@@ -1884,8 +1952,8 @@ elif page == "Forecast":
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "Sentiment":
 
-    st.markdown("<h1>Market Sentiment</h1>", unsafe_allow_html=True)
-    st.markdown("Real-time sentiment from gold-related financial news headlines.")
+    page_header("Market Sentiment",
+                "VADER NLP sentiment analysis on live gold news headlines from Yahoo Finance.")
 
     @st.cache_data(ttl=1800)
     def fetch_gold_news():
@@ -2048,7 +2116,7 @@ elif page == "Sentiment":
 
 elif page == "About":
 
-    st.markdown("<h1>About This App</h1>", unsafe_allow_html=True)
+    page_header("About This App", "Aurum Gold Intelligence — open-source gold price analytics platform.")
 
     st.markdown("""
     <div style="background:#13212e; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:24px 28px; margin-bottom:20px;">
