@@ -384,7 +384,6 @@ with st.sidebar:
           <ellipse cx="44" cy="38" rx="12" ry="6" fill="white" opacity="0.18" transform="rotate(-30 44 38)"/>
         </svg>
         <div style="font-size:1.1rem;font-weight:800;color:#f2ca50;letter-spacing:1px;">AURUM</div>
-        <div style="font-size:0.68rem;color:#d6e4f7;opacity:0.5;letter-spacing:3px;margin-top:2px;">GOLD INTELLIGENCE</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -515,7 +514,6 @@ if page == "Home":
           environment-image="neutral"
         ></model-viewer>
         <div class="title">Gold Market Analytics<br><span style="font-size:1.8rem;">& Forecasting Platform</span></div>
-        <div class="subtitle">AI-Powered Market Analysis</div>
         <div class="badge">Data from Yahoo Finance &nbsp;&middot;&nbsp; Updated Daily</div>
       </div>
     </body>
