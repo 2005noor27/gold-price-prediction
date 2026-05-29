@@ -383,8 +383,8 @@ with st.sidebar:
                 font-weight="900" fill="#f2ca50">$</text>
           <ellipse cx="44" cy="38" rx="12" ry="6" fill="white" opacity="0.18" transform="rotate(-30 44 38)"/>
         </svg>
-        <div style="font-size:1rem;font-weight:800;color:#f2ca50;letter-spacing:0.5px;line-height:1.3;">Gold Market Analytics<br>&amp; Forecasting Platform</div>
-        <div style="font-size:0.68rem;color:#d6e4f7;opacity:0.5;letter-spacing:2px;margin-top:4px;">AI-POWERED MARKET ANALYSIS</div>
+        <div style="font-size:1.1rem;font-weight:800;color:#f2ca50;letter-spacing:1px;">AURUM</div>
+        <div style="font-size:0.68rem;color:#d6e4f7;opacity:0.5;letter-spacing:3px;margin-top:2px;">GOLD INTELLIGENCE</div>
     </div>
     """, unsafe_allow_html=True)
 
