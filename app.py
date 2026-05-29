@@ -141,6 +141,21 @@ hr { border-color: rgba(242,202,80,0.12) !important; }
 """, unsafe_allow_html=True)
 
 
+@st.cache_data(ttl=3600)
+def load_economic_data():
+    """Fetch VIX and 10Y Treasury Yield from yfinance — cached 1 hour."""
+    try:
+        import yfinance as yf
+        eco = yf.download(["^VIX","^TNX"], period="max",
+                           auto_adjust=False, progress=False)["Close"]
+        eco.columns = ["TNX_Yield", "VIX"]
+        eco = eco.reset_index().rename(columns={"Date":"Date"})
+        eco["Date"] = pd.to_datetime(eco["Date"])
+        return eco
+    except Exception:
+        return pd.DataFrame()
+
+
 @st.cache_data
 def load_data():
     df = pd.read_csv("TSDATA.csv")
@@ -235,6 +250,21 @@ def load_data():
             capped_ret = np.clip(actual_ret, -clip_level, clip_level) / 100
             df.loc[i, 'Price_Gold'] = prev_price * (1 + capped_ret)
 
+    # ── Merge Economic Data (VIX + 10Y Treasury) ─────────────────────────
+    try:
+        import yfinance as yf
+        _eco = yf.download(["^VIX","^TNX"], start="1986-01-01",
+                            auto_adjust=False, progress=False)["Close"]
+        _eco.columns = ["TNX_Yield","VIX"]
+        _eco = _eco.reset_index()
+        _eco["Date"] = pd.to_datetime(_eco["Date"]).dt.tz_localize(None)
+        df = df.merge(_eco, on="Date", how="left")
+        df["VIX"]       = df["VIX"].ffill()
+        df["TNX_Yield"] = df["TNX_Yield"].ffill()
+    except Exception:
+        df["VIX"]       = np.nan
+        df["TNX_Yield"] = np.nan
+
     df['Year']  = df['Date'].dt.year
     df['Month'] = df['Date'].dt.month
 
@@ -296,7 +326,7 @@ with st.sidebar:
 
     st.markdown("<hr style='border-color:rgba(242,202,80,0.15); margin:8px 0 12px 0;'>", unsafe_allow_html=True)
 
-    page = st.radio("nav", ["Home", "Dashboard", "Prediction", "Forecast", "Simulator", "About"],
+    page = st.radio("nav", ["Home", "Dashboard", "Prediction", "Forecast", "Simulator", "Sentiment", "About"],
                     label_visibility="collapsed")
 
     st.markdown("<hr style='border-color:rgba(242,202,80,0.15); margin:12px 0;'>", unsafe_allow_html=True)
@@ -314,7 +344,7 @@ with st.sidebar:
         unit  = "oz (Ounce)"
         karat = "24K (999 — Pure)"
 
-    if page not in ("About", "Forecast", "Home", "Simulator"):
+    if page not in ("About", "Forecast", "Home", "Simulator", "Sentiment"):
         st.markdown("**Date Range**")
         min_date = df['Date'].min().date()
         max_date = df['Date'].max().date()
@@ -905,10 +935,12 @@ elif page == "Prediction":
         n_lags = st.slider("Lag Features (days)", 1, 30, 5)
 
     _tech_opts  = [c for c in ['EMA10_pct','EMA20_pct','MACD_pct','ATR_pct'] if c in df.columns]
+    _eco_opts   = [c for c in ['VIX','TNX_Yield'] if c in df.columns]
     extra_feats = st.multiselect(
         "Additional Features",
-        ['Price_Oil', 'Price_Dollar', 'Price_Stocks'] + _tech_opts,
-        default=['Price_Oil', 'Price_Dollar', 'MACD_pct', 'ATR_pct'])
+        ['Price_Oil','Price_Dollar','Price_Stocks'] + _eco_opts + _tech_opts,
+        default=['Price_Oil','Price_Dollar','MACD_pct','ATR_pct'] +
+                [c for c in ['VIX','TNX_Yield'] if c in df.columns])
 
     run = st.button("Train Model", type="primary", width='stretch')
 
@@ -958,6 +990,11 @@ elif page == "Prediction":
             # ── 5. Price assets -> returns; indicator features used directly
             price_feats = [f for f in extra_feats if f.startswith('Price_')]
             indic_feats = [f for f in extra_feats if not f.startswith('Price_')]
+            # VIX and TNX_Yield are level features — normalise as % change
+            for _ef in ['VIX','TNX_Yield']:
+                if _ef in indic_feats and _ef in ml.columns:
+                    ml[f'{_ef}_ret'] = ml[_ef].pct_change() * 100
+                    indic_feats = [f'{_ef}_ret' if x == _ef else x for x in indic_feats]
             for feat in price_feats:
                 ml[f'{feat}_ret'] = ml[feat].pct_change() * 100
 
@@ -1395,18 +1432,94 @@ elif page == "Prediction":
                                       margin=dict(l=0, r=0, t=10, b=0))
                 st.plotly_chart(fig_ret, width='stretch')
 
-            if model_name in ["Random Forest", "XGBoost"] and hasattr(mdl, "feature_importances_"):
+            if hasattr(mdl, "feature_importances_"):
                 st.subheader("Feature Importance")
-                fi     = pd.Series(mdl.feature_importances_,
-                                   index=feature_cols).sort_values(ascending=True)
-                fig_fi = go.Figure(go.Bar(x=fi.values, y=fi.index,
-                                           orientation='h', marker_color='#f2ca50'))
-                fig_fi.update_layout(height=max(250, len(feature_cols) * 30),
-                                     template='plotly_dark',
-                                     paper_bgcolor='#0d1b2a', plot_bgcolor='#061422',
-                                     xaxis_title="Importance",
-                                     margin=dict(l=0, r=0, t=10, b=0))
-                st.plotly_chart(fig_fi, width='stretch')
+                fi = pd.Series(mdl.feature_importances_,
+                               index=feature_cols).sort_values(ascending=False)
+
+                # ── Group features into categories ────────────────────────
+                def _categorize(name):
+                    if name.startswith("lag_"):             return "Lag (Return)"
+                    if name.startswith("rolling_mean"):     return "Rolling Mean"
+                    if name.startswith("rolling_std"):      return "Rolling Std"
+                    if name.startswith("vol_"):             return "Volatility"
+                    if name.startswith("mom_") or name.startswith("roc_") or name == "zscore_20":
+                        return "Momentum"
+                    if "Oil" in name:                       return "Oil"
+                    if "Dollar" in name or "DXY" in name:  return "Dollar/DXY"
+                    if "Stock" in name or "SP" in name:    return "S&P 500"
+                    if "VIX" in name:                      return "VIX"
+                    if "TNX" in name or "Yield" in name:   return "Treasury Yield"
+                    if name in ["EMA10_pct","EMA20_pct","MACD_pct","ATR_pct"]:
+                        return "Technical (EMA/MACD/ATR)"
+                    return "Other"
+
+                fi_df = pd.DataFrame({"feature": fi.index, "importance": fi.values})
+                fi_df["category"] = fi_df["feature"].apply(_categorize)
+                fi_df["pct"] = fi_df["importance"] / fi_df["importance"].sum() * 100
+
+                _cat_colors = {
+                    "Lag (Return)":        "#f2ca50",
+                    "Rolling Mean":        "#60a5fa",
+                    "Rolling Std":         "#818cf8",
+                    "Volatility":          "#ef4444",
+                    "Momentum":            "#22c55e",
+                    "Oil":                 "#fb923c",
+                    "Dollar/DXY":          "#a78bfa",
+                    "S&P 500":             "#34d399",
+                    "VIX":                 "#f87171",
+                    "Treasury Yield":      "#fbbf24",
+                    "Technical (EMA/MACD/ATR)": "#2dd4bf",
+                    "Other":               "#94a3b8",
+                }
+
+                fi_col1, fi_col2 = st.columns([3, 2])
+
+                with fi_col1:
+                    st.markdown("**Top 20 Features**")
+                    top20 = fi_df.head(20).sort_values("importance")
+                    _bar_colors = [_cat_colors.get(c,"#94a3b8") for c in top20["category"]]
+                    fig_fi = go.Figure(go.Bar(
+                        x=top20["pct"], y=top20["feature"],
+                        orientation="h", marker_color=_bar_colors,
+                        text=[f"{v:.1f}%" for v in top20["pct"]],
+                        textposition="outside"))
+                    fig_fi.update_layout(
+                        height=480, template="plotly_dark",
+                        paper_bgcolor="#0d1b2a", plot_bgcolor="#061422",
+                        xaxis_title="Importance (%)",
+                        margin=dict(l=0, r=40, t=10, b=0))
+                    st.plotly_chart(fig_fi, width="stretch")
+
+                with fi_col2:
+                    st.markdown("**By Category**")
+                    cat_sum = fi_df.groupby("category")["pct"].sum().sort_values(ascending=False)
+                    fig_pie = go.Figure(go.Pie(
+                        labels=cat_sum.index, values=cat_sum.values,
+                        marker_colors=[_cat_colors.get(c,"#94a3b8") for c in cat_sum.index],
+                        hole=0.45,
+                        textinfo="label+percent",
+                        textfont_size=11))
+                    fig_pie.update_layout(
+                        height=480, template="plotly_dark",
+                        paper_bgcolor="#0d1b2a",
+                        showlegend=False,
+                        margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_pie, width="stretch")
+
+                    # Top driver card
+                    _top_cat = cat_sum.index[0]
+                    _top_pct = cat_sum.values[0]
+                    _top_feat = fi_df.iloc[0]["feature"]
+                    st.markdown(
+                        f'<div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);'
+                        f'border-top:2px solid #f2ca50;border-radius:12px;padding:14px 16px;margin-top:8px;">'
+                        f'<div style="font-size:.7rem;color:#d6e4f7;opacity:.6;text-transform:uppercase;letter-spacing:.05em;">Top Driver</div>'
+                        f'<div style="font-size:1.2rem;font-weight:700;color:#f2ca50;">{_top_feat}</div>'
+                        f'<div style="font-size:.8rem;color:#d6e4f7;opacity:.7;">Category: {_top_cat} · {_top_pct:.1f}% of total</div>'
+                        f'</div>',
+                        unsafe_allow_html=True)
+
 
             with st.expander("Residual Analysis"):
                 residuals = y_te - preds_ret
@@ -1766,6 +1879,173 @@ elif page == "Forecast":
 # ══════════════════════════════════════════════════════════════════════════════
 # ABOUT
 # ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# SENTIMENT ANALYSIS
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "Sentiment":
+
+    st.markdown("<h1>Market Sentiment</h1>", unsafe_allow_html=True)
+    st.markdown("Real-time sentiment from gold-related financial news headlines.")
+
+    @st.cache_data(ttl=1800)
+    def fetch_gold_news():
+        """Fetch gold-related news via yfinance — cached 30 min."""
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker("GC=F")
+            news   = ticker.news
+            if not news:
+                return []
+            items = []
+            for n in news[:30]:
+                title = (n.get("title") or n.get("content",{}).get("title",""))
+                pub   = n.get("providerPublishTime") or n.get("content",{}).get("pubDate","")
+                url   = (n.get("link") or n.get("content",{}).get("canonicalUrl",{}).get("url","#"))
+                src   = (n.get("publisher") or n.get("content",{}).get("provider",{}).get("displayName",""))
+                if title:
+                    items.append({"title": title, "pub": pub, "url": url, "src": src})
+            return items
+        except Exception as e:
+            return []
+
+    @st.cache_data(ttl=1800)
+    def score_sentiment(headlines):
+        """Score headlines with VADER — install via pip if missing."""
+        try:
+            from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+        except ImportError:
+            try:
+                import subprocess, sys
+                subprocess.run([sys.executable,"-m","pip","install",
+                                "vaderSentiment","--quiet","--break-system-packages"],
+                               capture_output=True)
+                from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+            except Exception:
+                return [0.0] * len(headlines)
+        sia = SentimentIntensityAnalyzer()
+        return [sia.polarity_scores(h)["compound"] for h in headlines]
+
+    with st.spinner("Fetching latest gold news..."):
+        news_items = fetch_gold_news()
+
+    if not news_items:
+        st.warning("Could not fetch news. Try again in a few minutes.")
+    else:
+        headlines = [n["title"] for n in news_items]
+        scores    = score_sentiment(headlines)
+
+        # ── Overall Sentiment Gauge ───────────────────────────────────────────
+        avg_score = float(np.mean(scores)) if scores else 0.0
+        if avg_score >= 0.15:
+            sent_label, sent_color = "Bullish", "#22c55e"
+        elif avg_score <= -0.15:
+            sent_label, sent_color = "Bearish", "#ef4444"
+        else:
+            sent_label, sent_color = "Neutral", "#f2ca50"
+
+        bull_pct    = float(np.mean([s > 0.05  for s in scores]) * 100)
+        bear_pct    = float(np.mean([s < -0.05 for s in scores]) * 100)
+        neutral_pct = 100 - bull_pct - bear_pct
+
+        g1, g2, g3, g4 = st.columns(4)
+        g1.markdown(
+            f'<div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);'
+
+            f'border-top:2px solid {sent_color};border-radius:12px;padding:16px 18px;">'
+
+            f'<div style="font-size:.7rem;color:#d6e4f7;opacity:.6;text-transform:uppercase;letter-spacing:.05em;">Overall Sentiment</div>'
+
+            f'<div style="font-size:1.8rem;font-weight:800;color:{sent_color};">{sent_label}</div>'
+
+            f'<div style="font-size:.8rem;color:#d6e4f7;opacity:.6;">Score: {avg_score:+.3f}</div></div>',
+            unsafe_allow_html=True)
+        g2.metric("Bullish Headlines",  f"{bull_pct:.0f}%")
+        g3.metric("Bearish Headlines",  f"{bear_pct:.0f}%")
+        g4.metric("Neutral Headlines",  f"{neutral_pct:.0f}%")
+
+        st.markdown("---")
+
+        # ── Sentiment Distribution Chart ──────────────────────────────────────
+        sc1, sc2 = st.columns([2, 1])
+        with sc1:
+            st.markdown("**Headline Sentiment Scores**")
+            _colors = ["#22c55e" if s > 0.05 else "#ef4444" if s < -0.05 else "#f2ca50"
+                       for s in scores]
+            _labels = [h[:55] + "..." if len(h) > 55 else h for h in headlines]
+            fig_sent = go.Figure(go.Bar(
+                x=scores, y=_labels, orientation="h",
+                marker_color=_colors,
+                hovertemplate="%{y}<br>Score: %{x:.3f}<extra></extra>"))
+            fig_sent.add_vline(x=0, line=dict(color="rgba(255,255,255,0.3)", width=1))
+            fig_sent.add_vline(x=0.05,  line=dict(color="#22c55e", width=0.8, dash="dot"))
+            fig_sent.add_vline(x=-0.05, line=dict(color="#ef4444", width=0.8, dash="dot"))
+            fig_sent.update_layout(
+                height=max(380, len(headlines)*22), template="plotly_dark",
+                paper_bgcolor="#0d1b2a", plot_bgcolor="#061422",
+                xaxis=dict(title="VADER Compound Score", range=[-1.05, 1.05],
+                           tickvals=[-1,-0.5,-0.05,0,0.05,0.5,1]),
+                margin=dict(l=0, r=0, t=10, b=0), showlegend=False)
+            st.plotly_chart(fig_sent, width="stretch")
+
+        with sc2:
+            st.markdown("**Distribution**")
+            fig_pie = go.Figure(go.Pie(
+                labels=["Bullish","Neutral","Bearish"],
+                values=[bull_pct, neutral_pct, bear_pct],
+                marker_colors=["#22c55e","#f2ca50","#ef4444"],
+                hole=0.5, textinfo="label+percent"))
+            fig_pie.update_layout(
+                height=300, template="plotly_dark",
+                paper_bgcolor="#0d1b2a", showlegend=False,
+                margin=dict(l=0,r=0,t=10,b=0))
+            st.plotly_chart(fig_pie, width="stretch")
+
+            st.markdown("**Strongest Signal**")
+            _top_i = int(np.argmax(np.abs(scores)))
+            _top_s = scores[_top_i]
+            _top_c = "#22c55e" if _top_s > 0 else "#ef4444"
+            st.markdown(
+                f'<div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);'
+
+                f'border-left:3px solid {_top_c};border-radius:8px;padding:12px 14px;font-size:.8rem;color:#d6e4f7;">'
+
+                f'<b style="color:{_top_c};">{_top_s:+.3f}</b><br>{headlines[_top_i][:80]}</div>',
+                unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # ── News Feed ─────────────────────────────────────────────────────────
+        st.markdown("**Latest Headlines**")
+        for i, (item, score) in enumerate(zip(news_items, scores)):
+            s_color = "#22c55e" if score > 0.05 else "#ef4444" if score < -0.05 else "#f2ca50"
+            s_label = "Bullish" if score > 0.05 else "Bearish" if score < -0.05 else "Neutral"
+            import datetime as _dt
+            try:
+                _ts = _dt.datetime.fromtimestamp(int(item["pub"])).strftime("%b %d %H:%M") \
+                      if item["pub"] else ""
+            except Exception:
+                _ts = str(item["pub"])[:16] if item["pub"] else ""
+            st.markdown(
+                f'<div style="background:#13212e;border:1px solid rgba(255,255,255,0.06);'
+
+                f'border-left:3px solid {s_color};border-radius:8px;'
+
+                f'padding:10px 14px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">'
+
+                f'<div><a href="{item["url"]}" target="_blank" '
+
+                f'style="color:#d6e4f7;text-decoration:none;font-size:.85rem;font-weight:500;">{item["title"]}</a>'
+
+                f'<br><span style="font-size:.72rem;color:#d6e4f7;opacity:.45;">{item["src"]} &nbsp;·&nbsp; {_ts}</span></div>'
+
+                f'<div style="font-size:.75rem;font-weight:700;color:{s_color};'
+
+                f'white-space:nowrap;margin-left:12px;">{s_label}<br>{score:+.2f}</div></div>',
+                unsafe_allow_html=True)
+
+        st.caption("Sentiment powered by VADER NLP. Scores: +1.0 = most positive, -1.0 = most negative. Threshold: ±0.05.")
+
+
 elif page == "About":
 
     st.markdown("<h1>About This App</h1>", unsafe_allow_html=True)
