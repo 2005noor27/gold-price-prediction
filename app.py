@@ -301,31 +301,57 @@ df = load_data()
 # ── Add nav button CSS ────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* Hide default radio circles */
-div[data-testid="stRadio"] > div { gap: 4px; }
+/* ── Sidebar nav styling ── */
+div[data-testid="stRadio"] > div { gap: 2px !important; }
+
+/* Each nav item label */
 div[data-testid="stRadio"] label {
-    display: flex; align-items: center; gap: 10px;
-    padding: 9px 14px; border-radius: 8px; cursor: pointer;
-    transition: background 0.15s; color: #d6e4f7 !important;
-    font-size: 0.88rem; font-weight: 500; border: 1px solid transparent;
+    display: flex !important;
+    align-items: center !important;
+    padding: 9px 14px !important;
+    border-radius: 8px !important;
+    cursor: pointer !important;
+    transition: background 0.15s !important;
+    border: 1px solid transparent !important;
+    width: 100% !important;
 }
 div[data-testid="stRadio"] label:hover {
-    background: rgba(242,202,80,0.07);
-    border-color: rgba(242,202,80,0.15);
+    background: rgba(242,202,80,0.07) !important;
+    border-color: rgba(242,202,80,0.15) !important;
 }
-div[data-testid="stRadio"] label[data-checked="true"] {
-    background: rgba(242,202,80,0.12);
-    border-color: rgba(242,202,80,0.35);
-    color: #f2ca50 !important; font-weight: 600;
+
+/* Hide just the radio circle indicator — keep text visible */
+div[data-testid="stRadio"] label > div:first-child {
+    display: none !important;
 }
-/* Hide radio circle */
-div[data-testid="stRadio"] [data-testid="stMarkdownContainer"] { display: none; }
-div[data-testid="stRadio"] input[type="radio"] { display: none; }
+
+/* Text inside the label */
+div[data-testid="stRadio"] label p,
+div[data-testid="stRadio"] label span {
+    color: #d6e4f7 !important;
+    font-size: 0.88rem !important;
+    font-weight: 500 !important;
+    margin: 0 !important;
+}
+
+/* Active item — Streamlit marks selected with aria-checked or input:checked */
+div[data-testid="stRadio"] label:has(input:checked) {
+    background: rgba(242,202,80,0.12) !important;
+    border-color: rgba(242,202,80,0.35) !important;
+}
+div[data-testid="stRadio"] label:has(input:checked) p,
+div[data-testid="stRadio"] label:has(input:checked) span {
+    color: #f2ca50 !important;
+    font-weight: 600 !important;
+}
+
 /* Date inputs */
 [data-testid="stDateInput"] input {
     background: #13212e !important; color: #d6e4f7 !important;
-    border: 1px solid rgba(255,255,255,0.08) !important; border-radius: 8px !important;
-    font-family: "JetBrains Mono", monospace !important; font-size: 0.82rem !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 8px !important;
+    font-family: "JetBrains Mono", monospace !important;
+    font-size: 0.82rem !important;
 }
 </style>
 """, unsafe_allow_html=True)
