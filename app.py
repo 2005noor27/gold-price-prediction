@@ -211,6 +211,15 @@ with st.sidebar:
 
     st.markdown("<hr style='border-color:#2e5f65; margin:12px 0;'>", unsafe_allow_html=True)
 
+    if page == "Dashboard":
+        st.markdown("**Price Unit**")
+        unit = st.radio("unit", ["oz (Ounce)", "g (Gram)"],
+                        horizontal=True, label_visibility="collapsed")
+        st.markdown("<hr style='border-color:#2e5f65; margin:8px 0 12px 0;'>",
+                    unsafe_allow_html=True)
+    else:
+        unit = "oz (Ounce)"
+
     if page not in ("About", "Forecast", "Home"):
         st.markdown("**Date Range**")
         min_date = df['Date'].min().date()
@@ -320,6 +329,15 @@ if page == "Home":
 
 if page == "Dashboard":
 
+    # Unit conversion setup
+    _pdiv = 31.1035 if unit == "g (Gram)" else 1.0
+    _ulbl = "g" if unit == "g (Gram)" else "oz"
+    _ufmt = lambda v: f"${v:,.3f}" if _ulbl == "g" else f"${v:,.2f}"
+    disp_df = filtered_df.copy()
+    for _c in ['Price_Gold', 'High_Gold', 'Low_Gold', 'Open_Gold']:
+        if _c in disp_df.columns:
+            disp_df[_c] = disp_df[_c] / _pdiv
+
     # Hero image + title
     hero_col, title_col = st.columns([1, 2])
     with hero_col:
@@ -329,17 +347,18 @@ if page == "Dashboard":
         st.markdown(f"**{start_date}** → **{end_date}** &nbsp;|&nbsp; {len(filtered_df):,} trading days")
 
     # KPI Cards
-    gold_clean = filtered_df.dropna(subset=['Price_Gold'])
+    gold_clean = disp_df.dropna(subset=['Price_Gold'])
     if not gold_clean.empty:
         latest = gold_clean.iloc[-1]
         first  = gold_clean.iloc[0]
         delta  = latest['Price_Gold'] - first['Price_Gold']
         pct    = (delta / first['Price_Gold']) * 100
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Current Price",  f"${latest['Price_Gold']:,.2f}", f"{delta:+,.2f} ({pct:+.1f}%)")
-        c2.metric("Period High",    f"${gold_clean['High_Gold'].max():,.2f}")
-        c3.metric("Period Low",     f"${gold_clean['Low_Gold'].min():,.2f}")
-        c4.metric("Average Price",  f"${gold_clean['Price_Gold'].mean():,.2f}")
+        _d_str = f"{delta:+,.3f}" if _ulbl=="g" else f"{delta:+,.2f}"
+        c1.metric(f"Current Price ({_ulbl})",  _ufmt(latest['Price_Gold']), f"{_d_str} ({pct:+.1f}%)")
+        c2.metric("Period High",    _ufmt(gold_clean['High_Gold'].max()))
+        c3.metric("Period Low",     _ufmt(gold_clean['Low_Gold'].min()))
+        c4.metric("Average Price",  _ufmt(gold_clean['Price_Gold'].mean()))
 
     st.markdown("---")
 
@@ -352,7 +371,7 @@ if page == "Dashboard":
         chart_type = st.radio("ct", ["Candlestick", "Line"],
                               horizontal=True, label_visibility="collapsed")
 
-    candle_df = filtered_df.dropna(subset=['Open_Gold', 'High_Gold', 'Low_Gold', 'Price_Gold'])
+    candle_df = disp_df.dropna(subset=['Open_Gold', 'High_Gold', 'Low_Gold', 'Price_Gold'])
     fig = go.Figure()
 
     if chart_type == "Candlestick":
@@ -378,21 +397,21 @@ if page == "Dashboard":
             xaxis_rangeslider_visible=False,
         )
     else:
-        fig.add_trace(go.Scatter(x=filtered_df['Date'], y=filtered_df['Price_Gold'],
+        fig.add_trace(go.Scatter(x=disp_df['Date'], y=disp_df['Price_Gold'],
                                   mode='lines', name='Close',
                                   line=dict(color='#ffc72c', width=2),
                                   fill='tozeroy', fillcolor='rgba(255,199,44,0.08)'))
-        fig.add_trace(go.Scatter(x=filtered_df['Date'], y=filtered_df['High_Gold'],
+        fig.add_trace(go.Scatter(x=disp_df['Date'], y=disp_df['High_Gold'],
                                   mode='lines', name='High',
                                   line=dict(color='rgba(0,200,0,0.4)', width=1, dash='dot')))
-        fig.add_trace(go.Scatter(x=filtered_df['Date'], y=filtered_df['Low_Gold'],
+        fig.add_trace(go.Scatter(x=disp_df['Date'], y=disp_df['Low_Gold'],
                                   mode='lines', name='Low',
                                   line=dict(color='rgba(255,80,80,0.4)', width=1, dash='dot'),
                                   fill='tonexty', fillcolor='rgba(180,180,180,0.04)'))
 
     fig.update_layout(height=480, template='plotly_dark',
                       paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
-                      xaxis_title="Date", yaxis_title="Price (USD)",
+                      xaxis_title="Date", yaxis_title=f"Price (USD/{_ulbl})",
                       hovermode='x unified',
                       legend=dict(orientation='h', y=1.02, x=0),
                       margin=dict(l=0, r=0, t=10, b=0))
@@ -408,7 +427,7 @@ if page == "Dashboard":
     with ti_c2:
         rsi_period = st.slider("RSI Period", 7, 21, 14, key="rsi_p")
 
-    tech_df = filtered_df[['Date', 'Price_Gold']].dropna().copy().reset_index(drop=True)
+    tech_df = disp_df[['Date', 'Price_Gold']].dropna().copy().reset_index(drop=True)
     tech_df['SMA']      = tech_df['Price_Gold'].rolling(bb_period).mean()
     tech_df['STD']      = tech_df['Price_Gold'].rolling(bb_period).std()
     tech_df['BB_upper'] = tech_df['SMA'] + 2 * tech_df['STD']
@@ -435,9 +454,9 @@ if page == "Dashboard":
             rsi_label = "Neutral"
         sm1, sm2, sm3, sm4 = st.columns(4)
         sm1.metric("RSI",         f"{current_rsi:.1f}", rsi_label)
-        sm2.metric("SMA (BB mid)",f"${latest_sma:,.2f}"   if not np.isnan(latest_sma)   else "—")
-        sm3.metric("Upper Band",  f"${latest_upper:,.2f}" if not np.isnan(latest_upper) else "—")
-        sm4.metric("Lower Band",  f"${latest_lower:,.2f}" if not np.isnan(latest_lower) else "—")
+        sm2.metric("SMA (BB mid)",_ufmt(latest_sma)   if not np.isnan(latest_sma)   else "—")
+        sm3.metric("Upper Band",  _ufmt(latest_upper) if not np.isnan(latest_upper) else "—")
+        sm4.metric("Lower Band",  _ufmt(latest_lower) if not np.isnan(latest_lower) else "—")
 
     bb_col, rsi_col = st.columns(2)
 
@@ -466,7 +485,7 @@ if page == "Dashboard":
                                      name='Gold Price'))
         fig_bb.update_layout(height=360, template='plotly_dark',
                               paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
-                              yaxis_title="Price (USD)", hovermode='x unified',
+                              yaxis_title=f"Price (USD/{_ulbl})", hovermode='x unified',
                               legend=dict(orientation='h', y=1.02, font=dict(size=10)),
                               margin=dict(l=0, r=0, t=10, b=0))
         st.plotly_chart(fig_bb, width='stretch')
@@ -543,10 +562,10 @@ if page == "Dashboard":
 
     with l2:
         st.subheader("Yearly Average Gold Price")
-        yearly = filtered_df.groupby('Year')['Price_Gold'].mean().reset_index()
+        yearly = disp_df.groupby('Year')['Price_Gold'].mean().reset_index()
         fig4 = px.bar(yearly, x='Year', y='Price_Gold', color='Price_Gold',
                       color_continuous_scale=[[0, '#2e5f65'], [0.5, '#ffc72c'], [1, '#ffffff']],
-                      labels={'Price_Gold': 'Avg Price (USD)'})
+                      labels={'Price_Gold': f'Avg Price (USD/{_ulbl})'}),
         fig4.update_layout(height=300, template='plotly_dark',
                            paper_bgcolor='#1c1f23', plot_bgcolor='#09090b',
                            showlegend=False, xaxis_title="")
@@ -579,7 +598,7 @@ if page == "Dashboard":
     # ── MACD Chart ────────────────────────────────────────────────────────────
     st.markdown("---")
     st.subheader("MACD (Moving Average Convergence Divergence)")
-    macd_df = filtered_df[['Date', 'Price_Gold']].dropna().copy().reset_index(drop=True)
+    macd_df = disp_df[['Date', 'Price_Gold']].dropna().copy().reset_index(drop=True)
     _p       = macd_df['Price_Gold']
     _ema12   = _p.ewm(span=12, adjust=False).mean()
     _ema26   = _p.ewm(span=26, adjust=False).mean()
@@ -710,13 +729,13 @@ if page == "Dashboard":
 
     st.markdown("---")
     with st.expander("View Raw Data"):
-        _raw = filtered_df[['Date', 'Price_Gold', 'High_Gold', 'Low_Gold',
+        _raw = disp_df[['Date', 'Price_Gold', 'High_Gold', 'Low_Gold',
                             'Price_Oil', 'Price_Dollar', 'Price_Stocks']].dropna()
         st.dataframe(_raw.set_index('Date'), width='stretch')
         st.download_button(
             label="Download as CSV",
             data=_raw.to_csv(index=False).encode('utf-8'),
-            file_name=f"gold_data_{start_date}_{end_date}.csv",
+            file_name=f"gold_data_{start_date}_{end_date}_{_ulbl}.csv",
             mime="text/csv",
             use_container_width=True)
 
