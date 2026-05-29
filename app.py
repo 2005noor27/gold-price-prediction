@@ -2247,8 +2247,19 @@ elif page == "Portfolio":
         # Daily returns
         _rets = _pdf[[_acols[a] for a in po_assets]].pct_change().dropna()
         _rets.columns = po_assets
+        # Clip extreme daily returns (±15%) — prevents April-2020 oil crash
+        # from distorting the covariance matrix (pct_change 0.1→25 = +24900%)
+        _clip = 0.15
+        _rets = _rets.clip(lower=-_clip, upper=_clip)
         _mu   = _rets.mean() * 252          # annualised expected returns
         _cov  = _rets.cov()  * 252          # annualised covariance
+
+        # Sanity check: warn if any asset still has unrealistic vol
+        _ann_vols = _rets.std() * np.sqrt(252) * 100
+        _suspicious = _ann_vols[_ann_vols > 150]
+        if not _suspicious.empty:
+            st.warning(f"High volatility detected after clipping: {_suspicious.to_dict()} "
+                       f"— results may be affected by data anomalies.")
 
         n_assets = len(po_assets)
         rf_rate  = 0.04                     # risk-free rate 4%
