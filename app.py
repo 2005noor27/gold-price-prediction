@@ -2552,85 +2552,118 @@ elif page == "Sentiment":
 
 elif page == "About":
 
-    page_header("About This App", "Aurum Gold Intelligence — open-source gold price analytics platform.")
+    page_header("About This Project",
+                "Gold Market Analytics & Forecasting Platform — methodology, data, and limitations.")
 
+    def _card(title, content, col_span=False):
+        return f'''<div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);
+        border-left:3px solid #f2ca50;border-radius:12px;padding:20px 24px;margin-bottom:16px;">
+        <div style="font-size:.7rem;color:#f2ca50;text-transform:uppercase;letter-spacing:.08em;
+        font-weight:700;margin-bottom:10px;">{title}</div>
+        <div style="color:#d6e4f7;line-height:1.8;font-size:.88rem;">{content}</div></div>'''
+
+    # ── Problem Statement ─────────────────────────────────────────────────────
+    st.markdown(_card("Problem Statement", """
+        Gold is one of the most traded commodities globally, serving as a safe-haven asset,
+        inflation hedge, and geopolitical risk indicator. Its price is influenced by a complex
+        interplay of macro-financial factors including interest rates, currency strength,
+        equity market performance, and market volatility (VIX).<br><br>
+        This platform applies machine learning to model short-term gold price tendencies using
+        historical price patterns and macro indicators.
+        <b style="color:#f2ca50;">It does not claim to predict prices with certainty</b> —
+        financial markets contain significant stochastic components.
+    """), unsafe_allow_html=True)
+
+    a1, a2 = st.columns(2)
+
+    with a1:
+        # ── Data Sources ─────────────────────────────────────────────────────
+        st.markdown(_card("Data Sources", """
+            All data is sourced from <b>Yahoo Finance</b> via the <code>yfinance</code> library
+            and updated daily through a GitHub Actions CI/CD pipeline.<br><br>
+            <b>Price Series:</b><br>
+            &nbsp;· Gold Futures (GC=F) — primary target variable<br>
+            &nbsp;· Crude Oil Futures (CL=F) — commodity correlation<br>
+            &nbsp;· US Dollar Index (DX-Y.NYB) — inverse gold correlation<br>
+            &nbsp;· S&P 500 Index (^GSPC) — risk appetite proxy<br><br>
+            <b>Economic Indicators:</b><br>
+            &nbsp;· VIX Fear Index (^VIX) — market volatility signal<br>
+            &nbsp;· 10Y Treasury Yield (^TNX) — opportunity cost of gold<br><br>
+            <b>Coverage:</b> 1986 – present · 10,000+ trading days
+        """), unsafe_allow_html=True)
+
+        # ── Validation Strategy ───────────────────────────────────────────────
+        st.markdown(_card("Validation Strategy", """
+            <b>Walk-Forward Validation</b> is used exclusively — the model is never evaluated
+            on data it was trained on.<br><br>
+            The dataset is split into N folds using <code>TimeSeriesSplit</code>:
+            each fold trains on all past data and tests only on future data,
+            respecting the temporal ordering of financial time series.<br><br>
+            <b>Metrics reported</b> are averages across all folds:<br>
+            &nbsp;· Directional Accuracy (% of correct up/down calls)<br>
+            &nbsp;· RMSE &amp; MAE on reconstructed prices<br>
+            &nbsp;· Sharpe, Sortino, Calmar ratios<br>
+            &nbsp;· Max Drawdown vs Buy &amp; Hold
+        """), unsafe_allow_html=True)
+
+    with a2:
+        # ── Methodology ───────────────────────────────────────────────────────
+        st.markdown(_card("Methodology", """
+            <b>Returns-Based Modeling:</b> Models predict daily percentage return
+            (stationary series) rather than raw price levels, which are non-stationary
+            and cause data leakage.<br><br>
+            <b>1-Step-Ahead Reconstruction:</b> Each predicted day uses the actual
+            previous price as anchor — no error compounding across steps.<br><br>
+            <b>Feature Engineering:</b><br>
+            &nbsp;· Lag features: t-1 to t-30, plus fixed lags at 7, 14, 21 days<br>
+            &nbsp;· Rolling statistics: mean &amp; std over 5, 10, 14, 20, 30 day windows<br>
+            &nbsp;· Realized volatility: annualised std over 5, 21, 63 days<br>
+            &nbsp;· Momentum: price change over 5–30 day horizons, ROC, z-score<br>
+            &nbsp;· Technical: EMA (10/20), MACD, ATR — price-normalised<br>
+            &nbsp;· Economic: VIX &amp; TNX % change<br><br>
+            <b>Probabilistic Forecasting:</b> 500 Monte Carlo simulations with
+            bootstrap residuals produce P10/P25/P50/P75/P90 scenario bands.
+        """), unsafe_allow_html=True)
+
+        # ── Models Used ───────────────────────────────────────────────────────
+        st.markdown(_card("Models Used", """
+            <b>Prediction (Backtesting):</b><br>
+            &nbsp;· <b style="color:#f2ca50;">LightGBM</b> — gradient boosting, recommended<br>
+            &nbsp;· <b style="color:#f2ca50;">XGBoost</b> — extreme gradient boosting<br>
+            &nbsp;· <b style="color:#f2ca50;">Random Forest</b> — ensemble baseline<br>
+            &nbsp;· <b style="color:#f2ca50;">Linear Regression</b> — linear baseline<br>
+            &nbsp;· MLP Neural Network — tabular, limited for time series<br><br>
+            <b>Forecasting (Multi-Horizon):</b><br>
+            &nbsp;· <b style="color:#f2ca50;">Prophet</b> — trend + seasonality decomposition<br>
+            &nbsp;· LightGBM / XGBoost / RF — recursive lag-based forecast<br><br>
+            <b>Portfolio:</b> Modern Portfolio Theory (Markowitz) with
+            Monte Carlo efficient frontier simulation.
+        """), unsafe_allow_html=True)
+
+    # ── Limitations ───────────────────────────────────────────────────────────
+    st.markdown(_card("Limitations & Disclaimer", """
+        <b>This platform has the following known limitations:</b><br><br>
+        &nbsp;1. <b>Market efficiency:</b> Gold markets are semi-efficient — historical patterns
+        have limited predictive power beyond the very short term (1–3 days).<br>
+        &nbsp;2. <b>Regime changes:</b> Models trained on historical data may fail during
+        unprecedented events (e.g., COVID-19, geopolitical shocks).<br>
+        &nbsp;3. <b>No sentiment data:</b> Geopolitical news and central bank policy decisions
+        are not captured in price history alone.<br>
+        &nbsp;4. <b>Stochasticity:</b> Financial returns contain a large random component.
+        Directional accuracy above 55% is considered meaningful.<br>
+        &nbsp;5. <b>Forecasting uncertainty:</b> Confidence bands widen significantly beyond
+        5–7 days. 30-day scenarios should be treated as directional tendencies only.<br><br>
+        <b style="color:#f2ca50;">This tool is for research and educational purposes only.
+        It is not financial advice. Do not make investment decisions based solely on these outputs.</b>
+    """), unsafe_allow_html=True)
+
+    # ── Tech Stack ────────────────────────────────────────────────────────────
     st.markdown("""
-    <div style="background:#13212e; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:24px 28px; margin-bottom:20px;">
-        <h3 style="color:#f2ca50; margin-top:0;">Gold Price Prediction App</h3>
-        <p style="color:#d6e4f7; line-height:1.8;">
-            An interactive dashboard and machine learning research tool for gold market analysis.
-            using historical data from Yahoo Finance covering gold futures, crude oil,
-            the US Dollar Index, and the S&P 500.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("""
-        <div style="background:#13212e; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; margin-bottom:16px;">
-            <h3 style="color:#f2ca50; margin-top:0;">Data</h3>
-            <ul style="color:#d6e4f7; line-height:2; margin:0; padding-left:20px;">
-                <li>Source: Yahoo Finance (yfinance)</li>
-                <li>Gold Futures (GC=F)</li>
-                <li>Crude Oil Futures (CL=F)</li>
-                <li>US Dollar Index (DX-Y.NYB)</li>
-                <li>S&P 500 Index (^GSPC)</li>
-                <li>Updated daily via GitHub Actions</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown("""
-        <div style="background:#13212e; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px;">
-            <h3 style="color:#f2ca50; margin-top:0;">Dashboard Features</h3>
-            <ul style="color:#d6e4f7; line-height:2; margin:0; padding-left:20px;">
-                <li>Candlestick and Line charts</li>
-                <li>RSI and Bollinger Bands</li>
-                <li>Asset comparison (normalized)</li>
-                <li>Correlation heatmap</li>
-                <li>Yearly average and volume charts</li>
-                <li>Investment Simulator with drawdown</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
-    with col2:
-        st.markdown("""
-        <div style="background:#13212e; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; margin-bottom:16px;">
-            <h3 style="color:#f2ca50; margin-top:0;">ML Models (Prediction)</h3>
-            <ul style="color:#d6e4f7; line-height:2; margin:0; padding-left:20px;">
-                <li><b style="color:#f2ca50;">Random Forest</b> — ensemble of decision trees</li>
-                <li><b style="color:#f2ca50;">XGBoost</b> — extreme gradient boosting</li>
-                <li><b style="color:#f2ca50;">LightGBM</b> — fast gradient boosting, less overfitting</li>
-                <li><b style="color:#f2ca50;">Neural Network (MLP)</b> — multi-layer perceptron</li>
-                <li><b style="color:#f2ca50;">Linear Regression</b> — baseline model</li>
-            </ul>
-        </div>
-        <div style="background:#13212e; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px;">
-            <h3 style="color:#f2ca50; margin-top:0;">ML Models (Forecast)</h3>
-            <ul style="color:#d6e4f7; line-height:2; margin:0; padding-left:20px;">
-                <li><b style="color:#f2ca50;">Prophet</b> — Meta's time-series model, handles trend &amp; seasonality</li>
-                <li><b style="color:#f2ca50;">LightGBM / XGBoost / RF</b> — recursive lag-feature forecast</li>
-                <li><b style="color:#f2ca50;">Linear Regression</b> — baseline</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown("""
-        <div style="background:#13212e; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px;">
-            <h3 style="color:#f2ca50; margin-top:0;">Tech Stack</h3>
-            <ul style="color:#d6e4f7; line-height:2; margin:0; padding-left:20px;">
-                <li>Python 3.11 + Streamlit</li>
-                <li>Plotly (interactive charts)</li>
-                <li>scikit-learn / XGBoost / LightGBM / Prophet</li>
-                <li>pandas / numpy</li>
-                <li>GitHub Actions (auto daily update)</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div style="background:#13212e; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; margin-top:4px;">
-        <p style="color:#d6e4f7; margin:0; font-size:0.85rem; opacity:0.7; text-align:center;">
-            Built with Streamlit · Data from Yahoo Finance · Auto-updated daily
-        </p>
+    <div style="background:#0d1b2a;border:1px solid rgba(255,255,255,0.06);border-radius:8px;
+    padding:12px 20px;font-size:0.78rem;color:#d6e4f7;opacity:.6;text-align:center;">
+    Python 3.11 &nbsp;·&nbsp; Streamlit &nbsp;·&nbsp; Plotly &nbsp;·&nbsp;
+    scikit-learn &nbsp;·&nbsp; XGBoost &nbsp;·&nbsp; LightGBM &nbsp;·&nbsp; Prophet &nbsp;·&nbsp;
+    SHAP &nbsp;·&nbsp; scipy &nbsp;·&nbsp; VADER NLP &nbsp;·&nbsp;
+    GitHub Actions (daily auto-update)
     </div>
     """, unsafe_allow_html=True)
