@@ -215,10 +215,14 @@ with st.sidebar:
         st.markdown("**Price Unit**")
         unit = st.radio("unit", ["oz (Ounce)", "g (Gram)"],
                         horizontal=True, label_visibility="collapsed")
+        st.markdown("**Karat**")
+        karat = st.selectbox("karat", ["24K (999 — Pure)", "22K (916)", "21K (875)", "18K (750)"],
+                             label_visibility="collapsed")
         st.markdown("<hr style='border-color:#2e5f65; margin:8px 0 12px 0;'>",
                     unsafe_allow_html=True)
     else:
-        unit = "oz (Ounce)"
+        unit  = "oz (Ounce)"
+        karat = "24K (999 — Pure)"
 
     if page not in ("About", "Forecast", "Home"):
         st.markdown("**Date Range**")
@@ -330,9 +334,13 @@ if page == "Home":
 if page == "Dashboard":
 
     # Unit conversion setup
-    _pdiv = 31.1035 if unit == "g (Gram)" else 1.0
-    _ulbl = "g" if unit == "g (Gram)" else "oz"
-    _ufmt = lambda v: f"${v:,.3f}" if _ulbl == "g" else f"${v:,.2f}"
+    _purity_map = {"24K (999 — Pure)": 0.999, "22K (916)": 0.916,
+                   "21K (875)": 0.875, "18K (750)": 0.750}
+    _purity = _purity_map.get(karat, 1.0)
+    _knum   = karat[:3]  # "24K", "22K", etc.
+    _pdiv   = (31.1035 if unit == "g (Gram)" else 1.0) / _purity
+    _ulbl   = "g" if unit == "g (Gram)" else "oz"
+    _ufmt   = lambda v: f"${v:,.3f}" if _ulbl == "g" else f"${v:,.2f}"
     disp_df = filtered_df.copy()
     for _c in ['Price_Gold', 'High_Gold', 'Low_Gold', 'Open_Gold']:
         if _c in disp_df.columns:
@@ -355,7 +363,7 @@ if page == "Dashboard":
         pct    = (delta / first['Price_Gold']) * 100
         c1, c2, c3, c4 = st.columns(4)
         _d_str = f"{delta:+,.3f}" if _ulbl=="g" else f"{delta:+,.2f}"
-        c1.metric(f"Current Price ({_ulbl})",  _ufmt(latest['Price_Gold']), f"{_d_str} ({pct:+.1f}%)")
+        c1.metric(f"Current Price — {_knum} ({_ulbl})",  _ufmt(latest['Price_Gold']), f"{_d_str} ({pct:+.1f}%)")
         c2.metric("Period High",    _ufmt(gold_clean['High_Gold'].max()))
         c3.metric("Period Low",     _ufmt(gold_clean['Low_Gold'].min()))
         c4.metric("Average Price",  _ufmt(gold_clean['Price_Gold'].mean()))
