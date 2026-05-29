@@ -921,18 +921,41 @@ elif page == "Prediction":
             # ── تحويل للعوائد اليومية (stationary) ───────────────────────────
             ml['Return_Gold'] = ml['Price_Gold'].pct_change() * 100   # % يومي
 
-            # Lag features على العوائد (ليس الأسعار)
+            # ── 1. Lag Features (return lags — stationary) ───────────────
+            # slider lags (1..n_lags)
             for lag in range(1, n_lags + 1):
                 ml[f'lag_{lag}'] = ml['Return_Gold'].shift(lag)
+            # Fixed meaningful lags regardless of slider
+            for lag in [7, 14, 21]:
+                if lag > n_lags:  # avoid duplication
+                    ml[f'lag_{lag}'] = ml['Return_Gold'].shift(lag)
 
-            # Rolling statistics on returns (time-series features)
-            for _w in [5, 10, 20]:
+            # ── 2. Rolling Statistics (mean & std of returns) ────────────
+            for _w in [5, 10, 14, 20, 30]:
                 ml[f'rolling_mean_{_w}'] = ml['Return_Gold'].rolling(_w).mean()
                 ml[f'rolling_std_{_w}']  = ml['Return_Gold'].rolling(_w).std()
-            ml['momentum_5']  = ml['Price_Gold'].pct_change(5)  * 100
-            ml['momentum_10'] = ml['Price_Gold'].pct_change(10) * 100
 
-            # Price assets -> returns; indicator features used directly
+            # ── 3. Volatility Features ────────────────────────────────────
+            # Realized volatility: annualised std of returns over window
+            ml['vol_5']  = ml['Return_Gold'].rolling(5).std()  * np.sqrt(252)
+            ml['vol_21'] = ml['Return_Gold'].rolling(21).std() * np.sqrt(252)
+            ml['vol_63'] = ml['Return_Gold'].rolling(63).std() * np.sqrt(252)
+            # Volatility ratio: short-term vs long-term (regime signal)
+            ml['vol_ratio'] = ml['vol_5'] / (ml['vol_63'] + 1e-9)
+
+            # ── 4. Momentum Features ──────────────────────────────────────
+            # Price momentum: % change over N days
+            for _d in [5, 7, 10, 14, 21, 30]:
+                ml[f'mom_{_d}d'] = ml['Price_Gold'].pct_change(_d) * 100
+            # Rate of Change (ROC)
+            ml['roc_5']  = (ml['Price_Gold'] - ml['Price_Gold'].shift(5))  / (ml['Price_Gold'].shift(5)  + 1e-9) * 100
+            ml['roc_20'] = (ml['Price_Gold'] - ml['Price_Gold'].shift(20)) / (ml['Price_Gold'].shift(20) + 1e-9) * 100
+            # Mean-reversion: distance from 20-day SMA (z-score)
+            _sma20 = ml['Price_Gold'].rolling(20).mean()
+            _std20 = ml['Price_Gold'].rolling(20).std()
+            ml['zscore_20'] = (ml['Price_Gold'] - _sma20) / (_std20 + 1e-9)
+
+            # ── 5. Price assets -> returns; indicator features used directly
             price_feats = [f for f in extra_feats if f.startswith('Price_')]
             indic_feats = [f for f in extra_feats if not f.startswith('Price_')]
             for feat in price_feats:
@@ -942,11 +965,15 @@ elif page == "Prediction":
 
             ret_extra    = [f'{f}_ret' for f in price_feats if f'{f}_ret' in ml.columns] + \
                            [f for f in indic_feats if f in ml.columns]
-            feature_cols = [f'lag_{i}' for i in range(1, n_lags + 1)] + ret_extra
-            feature_cols += [c for c in [
-                'rolling_mean_5','rolling_std_5','rolling_mean_10',
-                'rolling_std_10','momentum_5','momentum_10'
-            ] if c in ml.columns]
+            _fixed_lags  = [f'lag_{l}' for l in [7,14,21] if l > n_lags]
+            _roll_feats  = [f'rolling_mean_{w}' for w in [5,10,14,20,30]] + \
+                           [f'rolling_std_{w}'  for w in [5,10,14,20,30]]
+            _vol_feats   = ['vol_5','vol_21','vol_63','vol_ratio']
+            _mom_feats   = [f'mom_{d}d' for d in [5,7,10,14,21,30]] + \
+                           ['roc_5','roc_20','zscore_20']
+            feature_cols = ([f'lag_{i}' for i in range(1, n_lags + 1)] +
+                            _fixed_lags + ret_extra +
+                            _roll_feats + _vol_feats + _mom_feats)
             feature_cols = [c for c in feature_cols if c in ml.columns]
 
             X      = ml[feature_cols].values
@@ -1333,22 +1360,43 @@ elif page == "Forecast":
                     fc_df[f'{c}_ret'] = fc_df[c].pct_change() * 100
                     ret_extra_cols.append(f'{c}_ret')
 
+            # 1. Lag features
             for lag in range(1, fc_lags + 1):
                 fc_df[f'lag_{lag}'] = fc_df['Return_Gold'].shift(lag)
+            for lag in [7, 14, 21]:
+                if lag > fc_lags:
+                    fc_df[f'lag_{lag}'] = fc_df['Return_Gold'].shift(lag)
 
-            # Rolling statistics & momentum (time-series features)
-            for _w in [5, 10, 20]:
+            # 2. Rolling statistics
+            for _w in [5, 10, 14, 20, 30]:
                 fc_df[f'rolling_mean_{_w}'] = fc_df['Return_Gold'].rolling(_w).mean()
                 fc_df[f'rolling_std_{_w}']  = fc_df['Return_Gold'].rolling(_w).std()
-            fc_df['momentum_5']  = fc_df['Price_Gold'].pct_change(5)  * 100
-            fc_df['momentum_10'] = fc_df['Price_Gold'].pct_change(10) * 100
+
+            # 3. Volatility features
+            fc_df['vol_5']    = fc_df['Return_Gold'].rolling(5).std()  * np.sqrt(252)
+            fc_df['vol_21']   = fc_df['Return_Gold'].rolling(21).std() * np.sqrt(252)
+            fc_df['vol_63']   = fc_df['Return_Gold'].rolling(63).std() * np.sqrt(252)
+            fc_df['vol_ratio']= fc_df['vol_5'] / (fc_df['vol_63'] + 1e-9)
+
+            # 4. Momentum features
+            for _d in [5, 7, 10, 14, 21, 30]:
+                fc_df[f'mom_{_d}d'] = fc_df['Price_Gold'].pct_change(_d) * 100
+            fc_df['roc_5']    = fc_df['Price_Gold'].pct_change(5)  * 100
+            fc_df['roc_20']   = fc_df['Price_Gold'].pct_change(20) * 100
+            _sma20_fc = fc_df['Price_Gold'].rolling(20).mean()
+            _std20_fc = fc_df['Price_Gold'].rolling(20).std()
+            fc_df['zscore_20'] = (fc_df['Price_Gold'] - _sma20_fc) / (_std20_fc + 1e-9)
+
             fc_df = fc_df.dropna().reset_index(drop=True)
 
-            ts_feat_cols = [c for c in [
-                'rolling_mean_5','rolling_std_5','rolling_mean_10',
-                'rolling_std_10','momentum_5','momentum_10'
-            ] if c in fc_df.columns]
-            feature_cols = [f'lag_{i}' for i in range(1, fc_lags + 1)] + ret_extra_cols + ts_feat_cols
+            _fc_fixed_lags = [f'lag_{l}' for l in [7,14,21] if l > fc_lags]
+            _fc_roll = [f'rolling_mean_{w}' for w in [5,10,14,20,30]] + \
+                       [f'rolling_std_{w}'  for w in [5,10,14,20,30]]
+            _fc_vol  = ['vol_5','vol_21','vol_63','vol_ratio']
+            _fc_mom  = [f'mom_{d}d' for d in [5,7,10,14,21,30]] + ['roc_5','roc_20','zscore_20']
+            ts_feat_cols = _fc_roll + _fc_vol + _fc_mom
+            feature_cols = ([f'lag_{i}' for i in range(1, fc_lags + 1)] +
+                            _fc_fixed_lags + ret_extra_cols + ts_feat_cols)
             feature_cols = [c for c in feature_cols if c in fc_df.columns]
 
             X_all      = fc_df[feature_cols].values
