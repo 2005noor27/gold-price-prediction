@@ -371,6 +371,7 @@ with st.sidebar:
         "Prediction": ("🤖", "Train ML Models"),
         "Forecast":   ("🔮", "30-Day Outlook"),
         "Simulator":  ("💰", "Investment Calc"),
+        "Portfolio":  ("📐", "Optimize Allocation"),
         "Sentiment":  ("📰", "News Sentiment"),
         "About":      ("ℹ️",  "App Info"),
     }
@@ -395,7 +396,7 @@ with st.sidebar:
         unit  = "oz (Ounce)"
         karat = "24K (999 — Pure)"
 
-    if page not in ("About", "Forecast", "Home", "Simulator", "Sentiment"):
+    if page not in ("About", "Forecast", "Home", "Simulator", "Sentiment", "Portfolio"):
         st.markdown('<div style="font-size:.72rem;color:#d6e4f7;opacity:.5;text-transform:uppercase;letter-spacing:.08em;padding:0 2px 4px;">Date Range</div>', unsafe_allow_html=True)
         min_date = df["Date"].min().date()
         max_date = df["Date"].max().date()
@@ -828,6 +829,106 @@ if page == "Dashboard":
         margin=dict(l=0, r=0, t=10, b=0))
     st.plotly_chart(fig_macd, width='stretch')
 
+    # ── Market Regime Detection ───────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("Market Regime Detection")
+    st.markdown(
+        '<div style="font-size:.82rem;color:#d6e4f7;opacity:.6;margin-bottom:12px;">'
+        'Classifies the current market state using rolling volatility, 60-day momentum and SMA-200.</div>',
+        unsafe_allow_html=True)
+
+    _reg_df = filtered_df[["Date","Price_Gold"]].dropna().copy().reset_index(drop=True)
+    _reg_df["ret"]     = _reg_df["Price_Gold"].pct_change() * 100
+    _reg_df["vol_21"]  = _reg_df["ret"].rolling(21).std() * np.sqrt(252)
+    _reg_df["mom_60"]  = _reg_df["Price_Gold"].pct_change(60) * 100
+    _reg_df["sma_200"] = _reg_df["Price_Gold"].rolling(200).mean()
+    _reg_df = _reg_df.dropna().reset_index(drop=True)
+
+    if not _reg_df.empty:
+        _vol_hi = _reg_df["vol_21"].quantile(0.75)
+        _vol_lo = _reg_df["vol_21"].quantile(0.35)
+
+        def _classify(row):
+            if row["vol_21"] >= _vol_hi:                                     return "High Volatility"
+            elif row["Price_Gold"] > row["sma_200"] and row["mom_60"] > 3:  return "Bull Market"
+            elif row["Price_Gold"] < row["sma_200"] and row["mom_60"] < -3: return "Bear Market"
+            elif row["vol_21"] <= _vol_lo and row["mom_60"] > 0:            return "Quiet Bull"
+            elif row["vol_21"] <= _vol_lo:                                   return "Quiet Bear"
+            else:                                                             return "Transition"
+
+        _reg_df["regime"] = _reg_df.apply(_classify, axis=1)
+        _reg_colors = {"Bull Market":"#22c55e","Bear Market":"#ef4444",
+                       "High Volatility":"#f2ca50","Quiet Bull":"#86efac",
+                       "Quiet Bear":"#fca5a5","Transition":"#94a3b8"}
+
+        _cur  = _reg_df["regime"].iloc[-1]
+        _ccol = _reg_colors.get(_cur, "#94a3b8")
+        _cvol = _reg_df["vol_21"].iloc[-1]
+        _cmom = _reg_df["mom_60"].iloc[-1]
+        _csma = (_reg_df["Price_Gold"].iloc[-1] / _reg_df["sma_200"].iloc[-1] - 1) * 100
+        _rdist = _reg_df["regime"].value_counts(normalize=True) * 100
+
+        rg1, rg2, rg3, rg4 = st.columns(4)
+        rg1.markdown(
+            f'<div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);'
+            f'border-top:2px solid {_ccol};border-radius:12px;padding:16px 18px;">'
+            f'<div style="font-size:.7rem;color:#d6e4f7;opacity:.6;text-transform:uppercase;letter-spacing:.05em;">Current Regime</div>'
+            f'<div style="font-size:1.4rem;font-weight:800;color:{_ccol};">{_cur}</div>'
+            f'<div style="font-size:.75rem;color:#d6e4f7;opacity:.55;margin-top:4px;">Vol: {_cvol:.1f}% · Mom60: {_cmom:+.1f}%</div></div>',
+            unsafe_allow_html=True)
+        rg2.metric("Ann. Volatility (21d)", f"{_cvol:.1f}%", help="Rolling 21-day vol, annualised")
+        rg3.metric("Momentum (60d)",        f"{_cmom:+.1f}%", help="% change over last 60 trading days")
+        rg4.metric("vs SMA-200",            f"{_csma:+.1f}%", help="Current price vs 200-day moving average")
+
+        st.markdown("---")
+        _rga, _rgb = st.columns([3, 1])
+
+        _rmap = {"Bull Market":3,"Quiet Bull":2,"Transition":1,
+                 "Quiet Bear":-1,"Bear Market":-2,"High Volatility":0}
+        with _rga:
+            st.markdown("**Regime Timeline**")
+            fig_reg = go.Figure()
+            fig_reg.add_trace(go.Scatter(
+                x=_reg_df["Date"], y=_reg_df["Price_Gold"],
+                line=dict(color="rgba(214,228,247,0.25)", width=1),
+                name="Price", yaxis="y2"))
+            for _r, _c in _reg_colors.items():
+                _m = _reg_df["regime"] == _r
+                if _m.any():
+                    fig_reg.add_trace(go.Scatter(
+                        x=_reg_df.loc[_m,"Date"],
+                        y=[_rmap.get(_r,0)] * _m.sum(),
+                        mode="markers",
+                        marker=dict(color=_c, size=3, opacity=0.8),
+                        name=_r, yaxis="y"))
+            fig_reg.update_layout(
+                height=280, template="plotly_dark",
+                paper_bgcolor="#0d1b2a", plot_bgcolor="#061422",
+                yaxis=dict(title="Regime", tickvals=list(_rmap.values()),
+                           ticktext=list(_rmap.keys()), showgrid=False),
+                yaxis2=dict(overlaying="y", side="right", showgrid=False, title="Price (USD)"),
+                hovermode="x unified",
+                legend=dict(orientation="h", y=1.02, font=dict(size=9)),
+                margin=dict(l=0, r=0, t=10, b=0))
+            st.plotly_chart(fig_reg, width="stretch")
+
+        with _rgb:
+            st.markdown("**Time in Each Regime**")
+            fig_rd = go.Figure(go.Bar(
+                x=list(_rdist.values), y=list(_rdist.index),
+                orientation="h",
+                marker_color=[_reg_colors.get(r,"#94a3b8") for r in _rdist.index],
+                text=[f"{v:.0f}%" for v in _rdist.values],
+                textposition="outside"))
+            fig_rd.update_layout(
+                height=280, template="plotly_dark",
+                paper_bgcolor="#0d1b2a", plot_bgcolor="#061422",
+                xaxis_title="% of time",
+                margin=dict(l=0, r=30, t=10, b=0), showlegend=False)
+            st.plotly_chart(fig_rd, width="stretch")
+
+
+
 
 
     st.markdown("---")
@@ -985,7 +1086,17 @@ elif page == "Simulator":
 elif page == "Prediction":
 
     page_header("Gold Price Prediction",
-                "Train & evaluate ML models using Walk-Forward Validation — honest out-of-sample backtesting.")
+                "Estimates short-term market tendencies using historical & macro indicators. Financial markets are partially stochastic — no model predicts prices with certainty.")
+
+    st.markdown(
+        '<div style="background:rgba(242,202,80,0.05);border:1px solid rgba(242,202,80,0.2);'
+        'border-left:3px solid #f2ca50;border-radius:8px;padding:8px 14px;'
+        'font-size:0.78rem;color:#d6e4f7;opacity:0.8;margin-bottom:16px;">'
+        '<b style="color:#f2ca50;">Research Disclaimer:</b> This tool estimates short-term market '
+        'tendencies using historical & macro-financial indicators. Financial markets contain '
+        'significant stochastic components — outputs should not be used as investment advice.'
+        '</div>',
+        unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -1603,7 +1714,17 @@ elif page == "Prediction":
 elif page == "Forecast":
 
     page_header("30-Day Gold Price Forecast",
-                "Probabilistic forecast with Monte Carlo confidence bands (P10–P90) across 500 simulations.")
+                "Probabilistic outlook using historical patterns. Uncertainty bands widen rapidly — treat as tendencies, not exact predictions.")
+
+    st.markdown(
+        '<div style="background:rgba(242,202,80,0.05);border:1px solid rgba(242,202,80,0.2);'
+        'border-left:3px solid #f2ca50;border-radius:8px;padding:8px 14px;'
+        'font-size:0.78rem;color:#d6e4f7;opacity:0.8;margin-bottom:16px;">'
+        '<b style="color:#f2ca50;">Research Disclaimer:</b> This tool estimates short-term market '
+        'tendencies using historical & macro-financial indicators. Financial markets contain '
+        'significant stochastic components — outputs should not be used as investment advice.'
+        '</div>',
+        unsafe_allow_html=True)
 
     fc1, fc2, fc3 = st.columns(3)
     with fc1:
@@ -1615,8 +1736,12 @@ elif page == "Forecast":
         fc_lags = st.slider("Lag Features (days)", 5, 60, 20, key="fc_lags",
                            help="Number of past days fed as input. Prophet ignores this — it uses the full time series.")
     with fc3:
-        fc_days = st.slider("Forecast Horizon (days)", 7, 90, 30, key="fc_days",
-                           help="How many business days ahead to forecast. Uncertainty grows significantly beyond 14 days.")
+        _horizon_map = {"1 Day":1,"1 Week":5,"1 Month":30,"3 Months":63}
+        _hz_choice   = st.selectbox("Forecast Horizon",
+                                    list(_horizon_map.keys()), index=2,
+                                    key="fc_hz",
+                                    help="Longer horizons = much wider uncertainty bands. Beyond 14 days treat as directional tendency only.")
+        fc_days = _horizon_map[_hz_choice]
 
     fc_feats = st.multiselect(
         "Additional Features (last known values carried forward)",
@@ -1948,6 +2073,174 @@ elif page == "Forecast":
 # ABOUT
 # ══════════════════════════════════════════════════════════════════════════════
 # ══════════════════════════════════════════════════════════════════════════════
+# PORTFOLIO OPTIMIZATION
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "Portfolio":
+
+    page_header("Portfolio Optimization",
+                "Modern Portfolio Theory — find the optimal allocation between Gold, Oil, S&P 500 and Dollar Index.")
+
+    from scipy.optimize import minimize
+
+    po1, po2 = st.columns(2)
+    with po1:
+        po_start = st.date_input("From", value=pd.to_datetime("2015-01-01").date(),
+                                 min_value=df["Date"].min().date(),
+                                 max_value=df["Date"].max().date(), key="po_from")
+    with po2:
+        po_end   = st.date_input("To",   value=df["Date"].max().date(),
+                                 min_value=df["Date"].min().date(),
+                                 max_value=df["Date"].max().date(), key="po_to")
+
+    po_assets = st.multiselect("Assets to include",
+                               ["Gold","Oil","S&P 500","Dollar Index"],
+                               default=["Gold","Oil","S&P 500"], key="po_assets")
+
+    n_sim = st.slider("Monte Carlo simulations", 500, 5000, 2000, step=500,
+                      help="More simulations = smoother efficient frontier but slower")
+
+    run_po = st.button("Optimize Portfolio", type="primary", use_container_width=True)
+
+    if run_po:
+        _acols = {"Gold":"Price_Gold","Oil":"Price_Oil",
+                  "S&P 500":"Price_Stocks","Dollar Index":"Price_Dollar"}
+        _mask  = (df["Date"].dt.date >= po_start) & (df["Date"].dt.date <= po_end)
+        _pdf   = df[_mask][["Date"] + [_acols[a] for a in po_assets if _acols[a] in df.columns]]
+        _pdf   = _pdf.dropna().sort_values("Date").reset_index(drop=True)
+
+        if len(_pdf) < 60:
+            st.warning("Need at least 60 data points. Expand the date range.")
+            st.stop()
+
+        # Daily returns
+        _rets = _pdf[[_acols[a] for a in po_assets]].pct_change().dropna()
+        _rets.columns = po_assets
+        _mu   = _rets.mean() * 252          # annualised expected returns
+        _cov  = _rets.cov()  * 252          # annualised covariance
+
+        n_assets = len(po_assets)
+        rf_rate  = 0.04                     # risk-free rate 4%
+
+        def _portfolio_stats(w):
+            w  = np.array(w)
+            pr = float(w @ _mu)
+            pv = float(np.sqrt(w @ _cov.values @ w))
+            sr = (pr - rf_rate) / pv if pv > 1e-9 else 0
+            return pr, pv, sr
+
+        # ── Monte Carlo frontier ──────────────────────────────────────────────
+        rng = np.random.default_rng(42)
+        mc_results = []
+        for _ in range(n_sim):
+            w = rng.random(n_assets)
+            w = w / w.sum()
+            r, v, s = _portfolio_stats(w)
+            mc_results.append({"Return": r*100, "Volatility": v*100,
+                                "Sharpe": s, "Weights": w.tolist()})
+        mc_df = pd.DataFrame(mc_results)
+
+        # ── Optimised portfolios ──────────────────────────────────────────────
+        constraints = ({"type":"eq","fun": lambda w: np.sum(w)-1},)
+        bounds      = tuple((0.0, 1.0) for _ in range(n_assets))
+        w0          = np.ones(n_assets) / n_assets
+
+        # Max Sharpe
+        res_sr = minimize(lambda w: -_portfolio_stats(w)[2],
+                          w0, method="SLSQP", bounds=bounds, constraints=constraints)
+        w_sr   = res_sr.x
+        r_sr, v_sr, s_sr = _portfolio_stats(w_sr)
+
+        # Min Volatility
+        res_mv = minimize(lambda w: _portfolio_stats(w)[1],
+                          w0, method="SLSQP", bounds=bounds, constraints=constraints)
+        w_mv   = res_mv.x
+        r_mv, v_mv, s_mv = _portfolio_stats(w_mv)
+
+        # Equal weight
+        w_eq = np.ones(n_assets) / n_assets
+        r_eq, v_eq, s_eq = _portfolio_stats(w_eq)
+
+        # ── KPI ──────────────────────────────────────────────────────────────
+        st.markdown("---")
+        pk1, pk2, pk3 = st.columns(3)
+        for _col, _lbl, _w, _r, _v, _s, _c in [
+            (pk1, "Max Sharpe Portfolio",    w_sr, r_sr, v_sr, s_sr, "#f2ca50"),
+            (pk2, "Min Volatility Portfolio", w_mv, r_mv, v_mv, s_mv, "#22c55e"),
+            (pk3, "Equal Weight",             w_eq, r_eq, v_eq, s_eq, "#60a5fa"),
+        ]:
+            alloc_str = " · ".join(f"{a}: {wi*100:.0f}%" for a,wi in zip(po_assets,_w))
+            _col.markdown(
+                f'<div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);'
+                f'border-top:2px solid {_c};border-radius:12px;padding:16px 18px;">'
+                f'<div style="font-size:.7rem;color:#d6e4f7;opacity:.6;text-transform:uppercase;letter-spacing:.05em;">{_lbl}</div>'
+                f'<div style="font-size:1.1rem;font-weight:700;color:{_c};margin:6px 0 2px;">'
+                f'Return {_r*100:.1f}% · Vol {_v*100:.1f}% · Sharpe {_s:.2f}</div>'
+                f'<div style="font-size:.72rem;color:#d6e4f7;opacity:.5;">{alloc_str}</div></div>',
+                unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # ── Efficient Frontier chart ──────────────────────────────────────────
+        fig_ef = go.Figure()
+        fig_ef.add_trace(go.Scatter(
+            x=mc_df["Volatility"], y=mc_df["Return"],
+            mode="markers",
+            marker=dict(color=mc_df["Sharpe"], colorscale="Viridis",
+                        size=3, opacity=0.5, showscale=True,
+                        colorbar=dict(title="Sharpe", thickness=12)),
+            name="Simulated Portfolios",
+            hovertemplate="Vol: %{x:.1f}%<br>Return: %{y:.1f}%<extra></extra>"))
+
+        for _lbl, _w, _r, _v, _c, _sym in [
+            ("Max Sharpe",    w_sr, r_sr, v_sr, "#f2ca50", "star"),
+            ("Min Vol",       w_mv, r_mv, v_mv, "#22c55e", "diamond"),
+            ("Equal Weight",  w_eq, r_eq, v_eq, "#60a5fa", "circle"),
+        ]:
+            fig_ef.add_trace(go.Scatter(
+                x=[_v*100], y=[_r*100], mode="markers+text",
+                marker=dict(color=_c, size=14, symbol=_sym,
+                            line=dict(color="white", width=1.5)),
+                text=[_lbl], textposition="top center",
+                textfont=dict(color=_c, size=11),
+                name=_lbl,
+                hovertemplate=f"{_lbl}<br>Vol: {_v*100:.1f}%<br>Return: {_r*100:.1f}%<br>Sharpe: {_s:.2f}<extra></extra>"))
+
+        fig_ef.update_layout(
+            height=480, template="plotly_dark",
+            paper_bgcolor="#0d1b2a", plot_bgcolor="#061422",
+            xaxis_title="Annual Volatility (%)",
+            yaxis_title="Expected Annual Return (%)",
+            title="Efficient Frontier — Modern Portfolio Theory",
+            hovermode="closest",
+            legend=dict(orientation="h", y=1.02, font=dict(size=10)),
+            margin=dict(l=0, r=0, t=40, b=0))
+        st.plotly_chart(fig_ef, width="stretch")
+
+        # ── Allocation charts ─────────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("**Portfolio Allocations**")
+        al1, al2 = st.columns(2)
+        for _col, _lbl, _w, _c in [
+            (al1, "Max Sharpe", w_sr, "#f2ca50"),
+            (al2, "Min Volatility", w_mv, "#22c55e")
+        ]:
+            with _col:
+                fig_al = go.Figure(go.Pie(
+                    labels=po_assets, values=[wi*100 for wi in _w],
+                    hole=0.45,
+                    marker_colors=["#f2ca50","#ef4444","#22c55e","#60a5fa"][:n_assets],
+                    textinfo="label+percent"))
+                fig_al.update_layout(
+                    height=280, template="plotly_dark",
+                    paper_bgcolor="#0d1b2a", showlegend=False,
+                    title=dict(text=_lbl, font=dict(color=_c)),
+                    margin=dict(l=0,r=0,t=30,b=0))
+                st.plotly_chart(fig_al, width="stretch")
+
+        st.caption("Based on Modern Portfolio Theory (Markowitz). Past performance does not guarantee future results.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SENTIMENT ANALYSIS
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "Sentiment":
@@ -2122,7 +2415,7 @@ elif page == "About":
     <div style="background:#13212e; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:24px 28px; margin-bottom:20px;">
         <h3 style="color:#f2ca50; margin-top:0;">Gold Price Prediction App</h3>
         <p style="color:#d6e4f7; line-height:1.8;">
-            An interactive dashboard and machine learning prediction tool for gold price analysis,
+            An interactive dashboard and machine learning research tool for gold market analysis.
             using historical data from Yahoo Finance covering gold futures, crude oil,
             the US Dollar Index, and the S&P 500.
         </p>
