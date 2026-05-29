@@ -364,18 +364,7 @@ if page == "Home":
     </script>
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }
-      body {
-        font-family: sans-serif; overflow:hidden;
-        background: url("./app/static/marble_bg.jpg") center center / cover no-repeat;
-      }
-      body::before {
-        content: "";
-        position: fixed; inset: 0;
-        background: rgba(0,0,0,0.45);
-        backdrop-filter: blur(0px);
-        z-index: 0;
-      }
-      .hero { position: relative; z-index: 1; }
+      body { font-family: sans-serif; overflow:hidden; background:#061422; }
       .hero {
         display:flex; flex-direction:column; align-items:center;
         justify-content:center; height:100vh; width:100%;
