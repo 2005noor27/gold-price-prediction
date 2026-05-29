@@ -1103,6 +1103,9 @@ elif page == "Prediction":
         model_name = st.selectbox("Model",
                                    ["Random Forest", "XGBoost", "LightGBM", "Linear Regression", "Neural Network (MLP)"],
                                    help="Choose the ML algorithm. LightGBM & XGBoost are generally best for financial time series.")
+        if model_name == "Neural Network (MLP)":
+            st.warning("MLP without sequence input rarely outperforms tree models on tabular financial data. "
+                       "Consider XGBoost or LightGBM for better results.")
     with c2:
         test_pct = st.slider("Test Size %", 10, 40, 20,
                            help="What % of data to use for testing. Walk-Forward splits this into multiple folds.")
@@ -1423,8 +1426,20 @@ elif page == "Prediction":
                 '<div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);border-radius:8px;'
                 'padding:10px 16px;margin-bottom:14px;font-size:0.82rem;color:#d6e4f7;opacity:0.8;">'
                 '<b>Honest backtesting:</b> uses only Walk-Forward out-of-sample predictions — '
-                'the model never saw the test data during training.</div>',
+                'the model never saw the test data during training. '
+                'Strategy: <b style="color:#f2ca50;">Long when predicted return &gt; 0.05%</b>, otherwise Cash.</div>',
                 unsafe_allow_html=True)
+
+            # ── Quick summary table (most important for quant reviewers) ────
+            _bt_preview_data = {
+                "Metric":   ["Total Return", "Annual Return", "Max Drawdown",
+                             "Sharpe Ratio", "Sortino Ratio", "Win Rate", "Calmar Ratio"],
+                "Strategy": ["—"]*7,
+                "Buy & Hold": ["—"]*7,
+                "Better?": ["—"]*7,
+            }
+            _bt_placeholder = st.empty()
+
 
             _bt_pred   = all_predr_cat
             _bt_actual = all_y_cat
@@ -1491,21 +1506,59 @@ elif page == "Prediction":
             ]:
                 _col.markdown(_mkpi(_l,_s,_b,_f,_g), unsafe_allow_html=True)
 
+            # ── Quant-style performance summary table ─────────────────────────
+            _tbl_rows = [
+                ("Total Return",   f"{_ms['tot']:.1f}%",     f"{_bh['tot']:.1f}%",     _ms['tot']    >  _bh['tot']),
+                ("Annual Return",  f"{_ms['ann']:.1f}%",     f"{_bh['ann']:.1f}%",     _ms['ann']    >  _bh['ann']),
+                ("Max Drawdown",   f"{_ms['dd']:.1f}%",      f"{_bh['dd']:.1f}%",      _ms['dd']     >  _bh['dd']),
+                ("Sharpe Ratio",   f"{_ms['sharpe']:.2f}",   f"{_bh['sharpe']:.2f}",   _ms['sharpe'] >  _bh['sharpe']),
+                ("Sortino Ratio",  f"{_ms['sortino']:.2f}",  f"{_bh['sortino']:.2f}",  _ms['sortino']>  _bh['sortino']),
+                ("Win Rate",       f"{_win_rate:.1f}%",       "50.0%",                  _win_rate     >  50),
+                ("Calmar Ratio",   f"{_ms['calmar']:.2f}",   f"{_bh['calmar']:.2f}",   _ms['calmar'] >  _bh['calmar']),
+            ]
+            _th = "padding:8px 12px;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;"
+            _td = "padding:7px 12px;font-family:monospace;font-size:.82rem;"
+            _tbl = (
+                '<table style="width:100%;border-collapse:collapse;">'
+                f'<thead><tr>'
+                f'<th style="{_th}text-align:left;color:#d6e4f7;opacity:.6;border-bottom:1px solid rgba(255,255,255,0.1);">Metric</th>'
+                f'<th style="{_th}text-align:right;color:#f2ca50;border-bottom:1px solid rgba(255,255,255,0.1);">Model Strategy</th>'
+                f'<th style="{_th}text-align:right;color:#d6e4f7;opacity:.7;border-bottom:1px solid rgba(255,255,255,0.1);">Buy & Hold</th>'
+                f'<th style="{_th}text-align:center;color:#d6e4f7;opacity:.6;border-bottom:1px solid rgba(255,255,255,0.1);">Edge?</th>'
+                f'</tr></thead><tbody>'
+            )
+            for _metric, _sv, _bv, _wins in _tbl_rows:
+                _is_dd = "Drawdown" in _metric
+                _edge  = not _wins if _is_dd else _wins
+                _ec    = "#22c55e" if _edge else "#ef4444"
+                _icon  = "✓ Yes" if _edge else "✗ No"
+                _tbl  += (
+                    f'<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'
+                    f'<td style="{_td}color:#d6e4f7;">{_metric}</td>'
+                    f'<td style="{_td}text-align:right;font-weight:700;color:#f2ca50;">{_sv}</td>'
+                    f'<td style="{_td}text-align:right;color:#d6e4f7;opacity:.7;">{_bv}</td>'
+                    f'<td style="{_td}text-align:center;color:{_ec};font-weight:700;">{_icon}</td>'
+                    f'</tr>'
+                )
+            _tbl += '</tbody></table>'
+            st.markdown(
+                '<div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);'
+                'border-radius:12px;padding:18px;margin-bottom:16px;">'
+                '<div style="font-size:.7rem;color:#d6e4f7;opacity:.6;text-transform:uppercase;'
+                'letter-spacing:.05em;margin-bottom:12px;">Performance Summary vs Buy & Hold (Out-of-Sample)</div>'
+                + _tbl + '</div>',
+                unsafe_allow_html=True)
+
             st.markdown(
                 f'<div style="background:#0d1b2a;border:1px solid rgba(255,255,255,0.06);'
-
                 f'border-radius:8px;padding:8px 16px;margin:10px 0;font-size:0.8rem;color:#d6e4f7;opacity:.7;">'
-
                 f'Trades: <b style="color:#f2ca50">{_n_trades}</b> &nbsp;·&nbsp;'
-
                 f'Avg Win: <b style="color:#22c55e">+{_avg_win:.3f}%</b> &nbsp;·&nbsp;'
-
                 f'Avg Loss: <b style="color:#ef4444">{_avg_loss:.3f}%</b> &nbsp;·&nbsp;'
-
                 f'Calmar: <b style="color:#f2ca50">{_ms["calmar"]:.2f}</b> &nbsp;·&nbsp;'
-
                 f'Days in Market: <b>{_coverage}%</b></div>',
                 unsafe_allow_html=True)
+
 
             st.markdown("---")
 
@@ -1697,6 +1750,64 @@ elif page == "Prediction":
                         unsafe_allow_html=True)
 
 
+            # ── SHAP Explainability ───────────────────────────────────────
+            if model_name in ("Random Forest", "XGBoost", "LightGBM") and hasattr(mdl, "feature_importances_"):
+                with st.expander("SHAP Explainability — Why did the model signal Buy/Sell?", expanded=False):
+                    try:
+                        import shap
+                        shap.initjs()
+                        _shap_explainer = shap.TreeExplainer(mdl)
+                        _shap_vals = _shap_explainer.shap_values(X_te[:min(200, len(X_te))])
+                        _shap_df   = pd.DataFrame(_shap_vals, columns=feature_cols)
+
+                        # Mean |SHAP| per feature
+                        _mean_shap = _shap_df.abs().mean().sort_values(ascending=False)
+                        _top_shap  = _mean_shap.head(15)
+
+                        sh_c1, sh_c2 = st.columns([3, 2])
+                        with sh_c1:
+                            st.markdown("**Mean |SHAP| — Average impact on model output**")
+                            _shap_colors = ["#22c55e" if _shap_df[f].mean() > 0 else "#ef4444"
+                                            for f in _top_shap.index]
+                            fig_shap = go.Figure(go.Bar(
+                                x=_top_shap.values, y=_top_shap.index,
+                                orientation="h", marker_color=_shap_colors,
+                                text=[f"{v:.4f}" for v in _top_shap.values],
+                                textposition="outside"))
+                            fig_shap.update_layout(
+                                height=400, template="plotly_dark",
+                                paper_bgcolor="#0d1b2a", plot_bgcolor="#061422",
+                                xaxis_title="Mean |SHAP value|",
+                                margin=dict(l=0, r=40, t=10, b=0))
+                            st.plotly_chart(fig_shap, width="stretch")
+
+                        with sh_c2:
+                            st.markdown("**Last Signal Explanation**")
+                            _last_shap = pd.Series(_shap_explainer.shap_values(X_te[-1:])[0],
+                                                   index=feature_cols).sort_values(key=abs, ascending=False).head(8)
+                            _last_pred = float(preds_ret[-1])
+                            _sig_color = "#22c55e" if _last_pred > 0.15 else "#ef4444" if _last_pred < -0.15 else "#f2ca50"
+                            st.markdown(
+                                f'<div style="background:#13212e;border:1px solid rgba(255,255,255,0.08);'
+                                f'border-radius:8px;padding:12px 14px;margin-bottom:10px;">'
+                                f'<div style="font-size:.7rem;color:#d6e4f7;opacity:.6;text-transform:uppercase;">Last prediction</div>'
+                                f'<div style="font-size:1.6rem;font-weight:800;color:{_sig_color};">{_last_pred:+.3f}%</div>'
+                                f'<div style="font-size:.75rem;color:#d6e4f7;opacity:.5;">Top contributing features (SHAP):</div></div>',
+                                unsafe_allow_html=True)
+                            for feat, val in _last_shap.items():
+                                bar_c = "#22c55e" if val > 0 else "#ef4444"
+                                st.markdown(
+                                    f'<div style="display:flex;justify-content:space-between;'
+                                    f'background:#0d1b2a;border-radius:6px;padding:5px 10px;margin:2px 0;">'
+                                    f'<span style="font-size:.78rem;color:#d6e4f7;">{feat}</span>'
+                                    f'<span style="font-size:.78rem;font-weight:700;color:{bar_c};">{val:+.4f}</span></div>',
+                                    unsafe_allow_html=True)
+                            st.caption("Green = pushed prediction UP (bullish) · Red = pushed DOWN (bearish)")
+                    except ImportError:
+                        st.info("Install SHAP for explainability: `pip install shap`")
+                    except Exception as e:
+                        st.warning(f"SHAP unavailable: {e}")
+
             with st.expander("Residual Analysis"):
                 residuals = y_te - preds_ret
                 fig_res   = px.histogram(residuals, nbins=60,
@@ -1713,8 +1824,8 @@ elif page == "Prediction":
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "Forecast":
 
-    page_header("30-Day Gold Price Forecast",
-                "Probabilistic outlook using historical patterns. Uncertainty bands widen rapidly — treat as tendencies, not exact predictions.")
+    page_header("Gold Price Scenario Analysis",
+                "Probabilistic scenario estimates — NOT price predictions. Financial markets are partially stochastic. Use as directional tendency only.")
 
     st.markdown(
         '<div style="background:rgba(242,202,80,0.05);border:1px solid rgba(242,202,80,0.2);'
@@ -1946,7 +2057,7 @@ elif page == "Forecast":
             # ── KPI Cards ────────────────────────────────────────────────
             sm1, sm2, sm3, sm4 = st.columns(4)
             sm1.metric("Last Actual Price",        f"${last_actual:,.2f}")
-            sm2.metric(f"Day {fc_days} Median",    f"${last_forecast:,.2f}",
+            sm2.metric(f"Day {fc_days} Base Scenario",    f"${last_forecast:,.2f}",
                        f"{change_usd:+,.2f} ({change_pct:+.1f}%)")
             sm3.metric(f"80% Range (Day {fc_days})",
                        f"${p10[-1]:,.0f} – ${p90[-1]:,.0f}")
@@ -1984,14 +2095,14 @@ elif page == "Forecast":
                 y=list(p90) + list(p10[::-1]),
                 fill="toself", fillcolor="rgba(242,202,80,0.07)",
                 line=dict(color="rgba(0,0,0,0)"),
-                hoverinfo="skip", showlegend=True, name="80% Range"))
+                hoverinfo="skip", showlegend=True, name="80% Probability Range"))
             # 50% band (P25-P75)
             fig_fc.add_trace(go.Scatter(
                 x=list(forecast_dates) + list(forecast_dates[::-1]),
                 y=list(p75) + list(p25[::-1]),
                 fill="toself", fillcolor="rgba(242,202,80,0.18)",
                 line=dict(color="rgba(0,0,0,0)"),
-                hoverinfo="skip", showlegend=True, name="50% Range"))
+                hoverinfo="skip", showlegend=True, name="50% Probability Range"))
             # Historical
             fig_fc.add_trace(go.Scatter(
                 x=hist["Date"], y=hist["Price_Gold"],
@@ -2000,17 +2111,17 @@ elif page == "Forecast":
             fig_fc.add_trace(go.Scatter(
                 x=forecast_dates, y=p50,
                 line=dict(color="#f2ca50", width=2.5, dash="dash"),
-                name="Median Forecast",
+                name="Base Scenario (Median)",
                 hovertemplate="%{x|%b %d, %Y}<br>Median: $%{y:,.2f}<extra></extra>"))
             # P10 / P90 lines
             fig_fc.add_trace(go.Scatter(
                 x=forecast_dates, y=p10,
                 line=dict(color="rgba(239,68,68,0.5)", width=1, dash="dot"),
-                name="Bear (P10)", hovertemplate="$%{y:,.2f}"))
+                name="Bear Scenario (P10)", hovertemplate="$%{y:,.2f}"))
             fig_fc.add_trace(go.Scatter(
                 x=forecast_dates, y=p90,
                 line=dict(color="rgba(34,197,94,0.5)", width=1, dash="dot"),
-                name="Bull (P90)", hovertemplate="$%{y:,.2f}"))
+                name="Bull Scenario (P90)", hovertemplate="$%{y:,.2f}"))
             _vline_x = str(fc_df["Date"].iloc[-1].date())
             fig_fc.add_shape(type="line",
                               x0=_vline_x, x1=_vline_x, y0=0, y1=1,
@@ -2030,17 +2141,17 @@ elif page == "Forecast":
             st.subheader("Daily Forecast Table")
             fc_table = pd.DataFrame({
                 "Date":           [d.strftime("%a, %b %d %Y") for d in forecast_dates],
-                "Median ($)":     [f"${p:,.2f}" for p in p50],
-                "Bear P10 ($)":   [f"${p:,.2f}" for p in p10],
-                "Bull P90 ($)":   [f"${p:,.2f}" for p in p90],
-                "50% Range":      [f"${a:,.0f}–${b:,.0f}" for a,b in zip(p25,p75)],
+                "Base Scenario ($)":     [f"${p:,.2f}" for p in p50],
+                "Bear Scenario ($)":   [f"${p:,.2f}" for p in p10],
+                "Bull Scenario ($)":   [f"${p:,.2f}" for p in p90],
+                "50% Probability Range":      [f"${a:,.0f}–${b:,.0f}" for a,b in zip(p25,p75)],
                 "Δ vs Today":     [f"{((p-last_actual)/last_actual*100):+.2f}%" for p in p50],
             })
             fc_table.index = range(1, fc_days + 1)
             fc_table.index.name = "Day"
             st.dataframe(fc_table, width="stretch")
             st.download_button(
-                label="Download Probabilistic Forecast as CSV",
+                label="Download Scenario Analysis as CSV",
                 data=fc_table.to_csv().encode("utf-8"),
                 file_name=f"gold_forecast_{fc_days}days_{fc_model.replace(' ','_')}.csv",
                 mime="text/csv", use_container_width=True)
@@ -2062,7 +2173,7 @@ elif page == "Forecast":
             <ol style="color:#d6e4f7; line-height:2; padding-left:20px;">
                 <li>Train the model on <b>all available historical data</b></li>
                 <li>Use the last N actual prices as lag input features</li>
-                <li>Predict Day 1 — feed that prediction into Day 2, and so on</li>
+                <li>Estimate Day 1 scenario — feed that into Day 2, and so on</li>
                 <li>Confidence band widens over the horizon to reflect growing uncertainty</li>
             </ol>
         </div>
