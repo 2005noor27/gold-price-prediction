@@ -9,3 +9,4 @@ prophet>=1.1.0
 vaderSentiment>=3.3.2
 scipy>=1.11.0
 shap>=0.45.0
+yfinance>=0.2.40
